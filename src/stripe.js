@@ -14,6 +14,8 @@ export const PLANS = {
   rgs: {
     monthly: { label: '$497 build + $99/mo', prices: ['rgs_build_497', 'rgs_care_99'], upfront: 596, mrr: 99 },
     annual: { label: '$1,188/yr, build free', prices: ['rgs_annual_1188'], upfront: 1188, mrr: 99 },
+    monthly_nobuild: { label: '$99/mo, build fee waived', prices: ['rgs_care_99'], upfront: 99, mrr: 99 },
+    monthly_trial: { label: '$497 build, first month free, then $99/mo', prices: ['rgs_build_497', 'rgs_care_99'], trialDays: 30, upfront: 497, mrr: 99 },
     monthly_seo: { label: '$497 build + $99/mo + daily local SEO articles $199/mo', prices: ['rgs_build_497', 'rgs_care_99', 'rgs_seo_199'], upfront: 795, mrr: 298 },
   },
   zw: { monthly: { label: '$20/mo, no setup fee', prices: ['zw_monthly_20'], upfront: 20, mrr: 20 } },
@@ -66,7 +68,7 @@ export async function createPaymentLink(env, brand, plan, lead, fetchImpl = fetc
   if (!P) throw new Error('Unknown plan');
   const line_items = {};
   for (const [i, lk] of P.prices.entries()) line_items[i] = { price: await ensurePrice(key, lk, fetchImpl), quantity: 1 };
-  const link = await sreq(key, 'POST', '/payment_links', { line_items, metadata: { lead_id: lead.id, brand, plan, business: lead.name.slice(0, 200) }, phone_number_collection: { enabled: 'true' } }, fetchImpl);
+  const link = await sreq(key, 'POST', '/payment_links', { line_items, ...(P.trialDays ? { subscription_data: { trial_period_days: P.trialDays } } : {}), metadata: { lead_id: lead.id, brand, plan, business: lead.name.slice(0, 200) }, phone_number_collection: { enabled: 'true' } }, fetchImpl);
   return { id: link.id, url: link.url };
 }
 
@@ -86,7 +88,8 @@ export async function checkStripe(env, brand, fetchImpl = fetch) {
     const plans = Object.keys(PLANS[brand]);
     const link = await createPaymentLink(env, brand, plans[0], { id: 'stripe-check', name: 'Stripe check' }, fetchImpl);
     await sreq(key, 'POST', `/payment_links/${link.id}`, { active: 'false' }, fetchImpl);
-    for (const p of plans.slice(1)) for (const lk of PLANS[brand][p].prices) await ensurePrice(key, lk, fetchImpl);
-    return { ok: true, livemode: !/_test_/.test(key), testLink: link.id, deactivated: true };
+    const tested = [plans[0]];
+    for (const p of plans.slice(1)) { const l = await createPaymentLink(env, brand, p, { id: 'stripe-check', name: 'Stripe check' }, fetchImpl); await sreq(key, 'POST', `/payment_links/${l.id}`, { active: 'false' }, fetchImpl); tested.push(p); }
+    return { ok: true, livemode: !/_test_/.test(key), plansTested: tested, deactivated: true };
   } catch (e) { return { ok: false, error: e.message }; }
 }

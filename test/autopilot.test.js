@@ -24,7 +24,7 @@ test('opt-out detection', () => {
 
 test('first text asks permission: ASCII, short, no link, no opt-out line', () => {
   const m = templateMessage({ name: "Joe's Roofing", web_type: 'none', reviews: '12' }, 'https://x.up.railway.app/s/joes-abc123', 0);
-  assert.match(m, /Zac here/i); assert.ok(m.length < 160); assert.ok(!/STOP|http/i.test(m)); assert.match(m, /\?$/);
+  assert.match(m, /- Zac$/); assert.ok(!/^(hey|hi)?,? ?zac/i.test(m)); assert.ok(m.length < 160); assert.ok(!/STOP|http/i.test(m)); assert.match(m, /\? - Zac$/);
   assert.ok(/^[\x20-\x7E]+$/.test(m)); assert.ok(segments(m) <= 3);
 });
 
@@ -41,7 +41,7 @@ function mockFetch(log) {
     log.push({ url, method: init.method, body });
     if (url.includes('anthropic')) {
       if (body.system.includes('sample websites')) return J({ content: [{ type: 'text', text: '<!doctype html><html><body><h1>[[NAME]]</h1><p>[[TOWN]] [[PHONE]]</p><a href="tel:[[PHONE_DIGITS]]">Call</a></body></html>' }] });
-      if (body.system.includes('ONE first cold text')) return J({ content: [{ type: 'text', text: JSON.stringify({ text: "Hey Mike, Zac here. Folks keep saying you leave every job spotless, but there's no site to show it off, so I built Joe's Roofing a free sample one. Want me to send it over?", why: 'clean-up praise, no website' }) }] });
+      if (body.system.includes('ONE first cold text')) return J({ content: [{ type: 'text', text: JSON.stringify({ text: "Mike, folks keep saying Joe's Roofing leaves every job spotless, but with no website Google sends roofing searches to competitors. Your new site is already built and can be live this week, no contract. Want me to send it over? - Zac", why: 'clean-up praise, no website' }) }] });
       if (body.system.includes('Zander, a 7 year old')) return J({ content: [{ type: 'text', text: "Hi! I'm Zander and I'm 7. People say you clean up really good! I made Joe's Roofing a free website. It's $20 a month and no setup fee. Can I send it to you?" }] });
       if (/Their reply: sure/.test(body.messages[0].content)) return J({ content: [{ type: 'text', text: '{"intent":"interested","reply":""}' }] });
       return J({ content: [{ type: 'text', text: '{"intent":"price","reply":"Good question, let me grab the details and text you right back."}' }] });
@@ -209,12 +209,12 @@ test('personalized first text: researches reviews + their site, writes with the 
   assert.equal(w.body.model, 'claude-opus-5-5');
   const u = w.body.messages[0].content;
   assert.match(u, /spotless/); assert.match(u, /NO mobile layout/); assert.match(u, /copyright 2014/);
-  const d = ap.view().drafts[0]; assert.match(d.msg, /spotless/); assert.ok(!/http/.test(d.msg)); assert.match(d.msg, /\?$/); assert.equal(d.why, 'clean-up praise, no website');
+  const d = ap.view().drafts[0]; assert.match(d.msg, /spotless/); assert.ok(!/http/.test(d.msg)); assert.match(d.msg, /\? - Zac$/); assert.equal(d.why, 'clean-up praise, no website');
 });
 
 test('a bad model text (has a link) falls back to the safe template', async () => {
   const { ap } = setup(); const L = { name: "Joe's Roofing" };
-  assert.match(templateMessage(L, '', 0), /want me to send it over\?$/);
+  assert.match(templateMessage(L, '', 0), /Want me to send it over\? - Zac$/);
 });
 
 test('two pipelines: RGS card moves to Zander pipeline on a no, then Texted / Opted Out there', async () => {
@@ -320,4 +320,15 @@ test('ready to buy: bot sends the right payment link itself, flags Zac, never tw
   assert.equal(log.filter((l) => l.method === 'PUT').at(-1).body.pipelineStageId, 'R3');
   await ap.handleInbound({ contactId: 'c1', text: "year up front please" });
   assert.equal(log.filter((l) => l.url.endsWith('/payment_links')).length, 1, 'no duplicate link');
+});
+
+test('offer split test: leads rotate through all 4 offers and the writer gets that offer', async () => {
+  const { ap, log } = setup();
+  for (let i = 2; i <= 4; i++) ap._deps.queue.push({ place_id: 'ChIJ' + i, name: 'Biz ' + i, phone: '(508) 555-010' + i, trade: 'pest control', town: 'Bourne, MA', tier: 'A', web_type: 'none' });
+  ap.setSettings({ mode: 'draft' }); for (let i = 0; i < 4; i++) await ap.tick();
+  const vs = Object.values(ap._state().leads).map((L) => L.variant).sort();
+  assert.deepEqual(vs, ['guarantee', 'plain', 'thisweek', 'trial']);
+  const prompts = log.filter((l) => l.url.includes('anthropic') && l.body.system.includes('ONE first cold text')).map((l) => l.body.system);
+  assert.ok(prompts.some((p) => /get the \$497 build fee back/.test(p)) && prompts.some((p) => /First month is free/.test(p)));
+  assert.ok(prompts.every((p) => /NEVER in the opening/.test(p)));
 });

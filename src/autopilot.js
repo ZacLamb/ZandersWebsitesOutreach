@@ -54,20 +54,25 @@ export function zanderMessage(p) {
   return ascii(`Hi! I'm Zander, I'm 7 and building websites is my first business (my dad helps). I made a free one for ${p.name}, can I send it to you? It's $20/mo, no setup fee.`);
 }
 export function templateMessage(p, url, step) {
-  if (step === 1) return ascii(`Hey, just checking, want me to send over the free sample site I built for ${p.name}?`);
-  if (step === 2) return ascii(`Last note from me, happy to send the free sample site for ${p.name} anytime. Have a good one!`);
-  // Short wins: in Zac's history, texts under ~140 chars got ~35% replies vs ~9% over 300 chars (confounded, but consistent).
-  return ascii(`Hey, Zac here. Built a free sample site for ${p.name}, want me to send it over?`);
+  if (step === 1) return ascii(`The new site I built for ${p.name} is finished and just sitting here. Want me to send it over so you can take a look? - Zac`);
+  if (step === 2) return ascii(`Last one from me: the site for ${p.name} is ready whenever you are, nothing for you to set up and no contract. Want it? - Zac`);
+  return ascii(`${p.name} - I already built you a new website. It's finished, can be live this week, and there's no contract. Want me to send it over? - Zac`);
 }
 export const linkMessage = (p, url, brand) => ascii(brand === 'zw'
   ? `Yay! Here it is: ${url} I made it for ${p.name}. Tell me what you think!`
   : `Here you go: ${url} Built it for ${p.name}. Let me know what you think, easy to tweak.`);
 const SKIP_LINK = new Set(['not_interested', 'wrong_person', 'asks_if_bot']);
 
-const VOICE = `Zac's style (from texts that got replies): casual, local, friendly, short. Examples:
-"Morning Tony! Any reason your google profile doesnt have a website to show off the awesome work you do? Built one for you if you'd have any interest, no monthly contracts just a site that works and can be updated easily <link>"
-"Hey boss! Saw your post, your website looked a bit outdated so I made you a new one. Let me know if you'd be interested in having an update and working with someone local <link>"
-"Hi Stephanie, this is Zac. I saw Lucys Cleaning & Junk Removal covers everything from Middleboro out to Boston with 18 reviews at 100% recommend, so I went ahead and built you a sample site: <link> Worth a look?"`;
+const VOICE = `Zac's texting style: casual, plain words, short sentences, sounds like a local contractor texting another contractor. No marketing language.`;
+
+// Offer split test. Each RGS lead gets one variant; Metrics shows replies and sales per variant.
+export const VARIANTS = {
+  guarantee: { label: '30-day call guarantee', hook: "If the new site doesn't bring them at least one phone call in the first 30 days, they get the $497 build fee back.", offer: 'Guarantee on this lead: if the new site does not bring them at least one phone call in the first 30 days, the $497 build fee is refunded in full.' },
+  trial: { label: 'First month free', hook: "First month is free and there's no contract. If they don't love it, Zac takes it down.", offer: 'Offer on this lead: the first month of the $99/mo is free (billing starts after 30 days), no contract, and if they do not like it Zac takes it down. The $497 build fee still applies.', plan: 'monthly_trial' },
+  thisweek: { label: 'Build fee waived this week', hook: 'If they go live this week, the $497 build fee is waived and they just pay the monthly, no contract.', offer: 'Offer on this lead: if they sign up within 7 days of the first text, the $497 build fee is waived and they pay only $99/mo, no contract.', plan: 'monthly_nobuild', days: 7 },
+  plain: { label: 'Plain (built, live this week, no contract)', hook: "It's already built, it can be live this week, and there's no contract.", offer: '' },
+};
+
 
 export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now = () => new Date(), deps, log = console.log }) {
   const file = path.join(dir, 'out', 'autopilot.json');
@@ -106,7 +111,9 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
   const publicUrl = () => env.PUBLIC_URL || (env.RAILWAY_PUBLIC_DOMAIN ? `https://${env.RAILWAY_PUBLIC_DOMAIN}` : '');
 
   const WRITER = () => env.ANTHROPIC_MODEL_WRITER || 'claude-opus-5-5';
-  const okText = (m, max = 320) => m && !/https?:|www\.|\.com|\/s\//i.test(m) && /\?/.test(m) && m.length <= max;
+  const hookFor = (p) => (VARIANTS[p.variant] || VARIANTS.plain).hook;
+  const badOpener = (m) => /zac|this is|i'?m local|i am local/i.test(m.slice(0, 30));
+  const okText = (m, max = 330) => m && !/https?:|www\.|\.com|\/s\//i.test(m) && /\?/.test(m) && m.length <= max;
 
   // Research the lead (Google reviews + their current site), then write a first text that could only be for them.
   async function writeMessage(p, url, facts) {
@@ -116,15 +123,17 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
         model: WRITER(),
         system: `${VOICE}
 
-You write ONE first cold text from Zac to the owner of a local trade business. The goal is a reply. It must read like Zac personally looked at THIS business, because he did: you have their Google reviews and a look at their current website.
+You write ONE first cold text to the owner of a local trade business. The goal is a reply. Write it about THEM and what THEY get, not about Zac. Make the offer so good that saying no feels dumb.
 
-How to personalize (pick the 1-2 strongest, true, specific things):
-- Something customers keep praising in the reviews (a specific kind of job, a town, being on time, cleanup, fair price). Paraphrase, never quote a review word for word, never name or describe a reviewer.
-- A concrete problem with their web presence: no website, only Facebook, site does not load, not secure, broken on phones, footer stuck on an old year, thin site that does not show their work.
-- Their standing: lots of reviews or a high rating with no site to match it is a strong angle.
-- Owner first name: ONLY if two or more reviews name the same first name and it is clearly the owner/the guy running it (or the business is named after him). Otherwise no name. Never guess.
+Structure, in this order:
+1) Open with THEIR business: one or two true, specific details from the research (what customers keep praising, how many great reviews they have) and what the website gap is costing them (people who search Google for their trade find a competitor's site instead, their best work is invisible, their site is broken on phones, etc.). Paraphrase reviews, never quote them word for word, never name or describe a reviewer.
+2) The offer: their new website is ALREADY BUILT and finished (do not call it a "sample" or "mockup"), plus this offer: ${hookFor(p)}
+3) An easy ask at the end: "Want me to send it over?" or very close.
+4) Sign off at the very end with "- Zac". You MAY add that he is local to the area in the sign-off or last sentence (he texts from a local number and is from the area), but NEVER in the opening.
 
-Rules: 160-260 characters, plain ASCII, no emoji, NO link and no URL (the sample link is sent only after they say yes), say he built them a free sample site, end by ASKING if they want him to send it over. No price. No hype words (amazing, incredible, game changer). Never invent or exaggerate a fact that is not in the research. Sound like a local guy texting, not a marketer. Include "Zac". Do not mention Google reviews robotically ("I saw your 4.8 rating") unless it is the best angle; specifics beat numbers.
+Owner first name: you may greet them by first name ONLY if two or more reviews name the same first name and it is clearly the owner. Otherwise no name.
+
+Hard rules: never start the text with Zac's name, "Hi, this is", "Hey, Zac here", "I'm local", or anything about Zac. 180-320 characters. Plain ASCII, no emoji. NO link and no URL. Do not invent facts or numbers that are not in the research. No hype words (amazing, incredible, game changer). Sound like a real person texting.
 
 Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 words max"}`,
         user: brief(p, facts), maxTokens: 2500,
@@ -134,7 +143,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
       if (jm) { try { j = JSON.parse(jm[0]); } catch { j = {}; } }
       if (!j.text) { const tm = t.match(/"text"\s*:\s*"((?:[^"\\]|\\.)*)"/); if (tm) j.text = JSON.parse(`"${tm[1]}"`); }
       const m = ascii(j.text || (/"text"\s*:/.test(t) ? '' : t.replace(/^```\w*|```$/g, '').replace(/^["']|["']$/g, '').trim()));
-      if (okText(m)) return { text: m, why: ascii(j.why || '').slice(0, 120) };
+      if (okText(m) && !badOpener(m)) return { text: m, why: ascii(j.why || '').slice(0, 120) };
       ev('warn', `personalized text for ${p.name} failed checks (${m.length} chars: "${m.slice(0, 60)}..."), using template`, p.place_id || p.id);
     } catch (e) { ev('warn', `message draft fell back to template: ${e.message}`); }
     return { text: templateMessage(p, url, 0), why: '' };
@@ -163,9 +172,18 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     L.msg = r.text; L.why = r.why; L.researched = true; L.writes = (L.writes || 0) + 1; L.angle = angleOf(L);
   }
 
+  function nextVariant() {
+    const n = Object.fromEntries(Object.keys(VARIANTS).map((k) => [k, 0]));
+    for (const L of Object.values(S.leads)) if (n[L.variant] != null) n[L.variant]++;
+    return Object.keys(n).sort((a, b) => n[a] - n[b])[0];
+  }
   async function draftOne() {
     load();
     if (!env.ANTHROPIC_API_KEY || !publicUrl()) return false;
+    if ((S.msgVersion || 1) < 2) { // offer split test + customer-first copy: rewrite queued drafts
+      for (const x of Object.values(S.leads)) if (x.status === 'drafted' && !x.test) { x.variant ||= nextVariant(); x.why = ''; x.writes = 0; }
+      S.msgVersion = 2; save();
+    }
     // refresh drafts written before personalization so what you review is what goes out
     const stale = Object.values(S.leads).find((x) => x.status === 'drafted' && !x.test && (!x.researched || (!x.why && (x.writes || 0) < 4)));
     if (stale) {
@@ -175,7 +193,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     if (!room(COST.site + COST.msg + COST.research)) return false;
     const p = deps.nextProspect(new Set(Object.keys(S.leads)), new Set(S.optOut));
     if (!p) return false;
-    const L = (S.leads[p.place_id] = { id: p.place_id, place_id: p.place_id, name: p.name, phone: digits(p.phone), trade: p.trade, town: p.town, tier: p.tier, website: p.website || '', web_type: p.web_type || '', rating: p.rating, reviews: p.reviews, status: 'drafting', step: 0, replies: [], botReplies: 0, created: now().toISOString() });
+    const L = (S.leads[p.place_id] = { id: p.place_id, place_id: p.place_id, name: p.name, phone: digits(p.phone), trade: p.trade, town: p.town, tier: p.tier, website: p.website || '', web_type: p.web_type || '', rating: p.rating, reviews: p.reviews, status: 'drafting', step: 0, replies: [], botReplies: 0, created: now().toISOString(), variant: nextVariant() });
     try {
       const slug = await generateSite(env, p, dir, fetchImpl);
       L.slug = slug; L.url = `${publicUrl()}/s/${slug}`;
@@ -235,7 +253,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
       }
       await sendSms(env, L.contactId, msg, fetchImpl, env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER);
       d.texts++; d.spend += segments(msg) * COST.sms; d.errors = 0;
-      L.step = step + 1; L.lastSentAt = now().getTime(); L.status = 'sent';
+      L.step = step + 1; L.lastSentAt = now().getTime(); L.status = 'sent'; if (step === 0) L.firstSentAt = L.lastSentAt;
       if (step === 0) await move(L, 'TEXTED');
       ev('send', `${step === 0 ? 'Texted' : 'Follow-up ' + step + ' to'} ${L.name}`, L.id);
       const gap = (9.5 * 3600e3) / effCap(); S.nextSendAt = t + gap * (0.7 + Math.random() * 0.6);
@@ -251,7 +269,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     if (!env.ANTHROPIC_API_KEY) return { intent: 'other', reply: '' };
     try {
       const out = await askClaude(env, {
-        system: `You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websites (Zander, age 7, with his dad Zac helping)" : 'Zac from Revenue Generating Solutions'}, who offered a local trade business a free sample website. Return ONLY JSON: {"intent": one of "ready_to_buy","interested","price","question","objection","not_interested","wrong_person","asks_if_bot","other","plan": one of "monthly","annual","monthly_seo","reply": string}. Use "ready_to_buy" ONLY when they clearly say they want to go ahead and pay or sign up (e.g. "let's do it", "how do I sign up", "send me the link to pay", "I'll take it"); a yes to seeing the sample, a maybe, or a question is NOT ready_to_buy. "plan": "annual" only if they chose paying the year up front, "monthly_seo" only if they asked for the SEO add-on, otherwise "monthly". For ready_to_buy set "reply" to "". "reply" is a short friendly plain-ASCII text from Zac (max 220 chars, no emoji) or "" if no reply should be sent. Rules: never state any price or timeline unless it appears in OFFER below; if price is asked and OFFER is empty, reply that you'll grab the details and text right back; never promise anything not in OFFER; if they ask whether this is a bot/automated/AI, intent "asks_if_bot" and reply ""; if not_interested/wrong_person, reply "" ; keep the sender's casual local voice; never mention the other brand.\nOFFER: ${(L.brand === 'zw' ? S.settings.offerZw : S.settings.offer) || '(none)'}`,
+        system: `You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websites (Zander, age 7, with his dad Zac helping)" : 'Zac from Revenue Generating Solutions'}, who offered a local trade business a free sample website. Return ONLY JSON: {"intent": one of "ready_to_buy","interested","price","question","objection","not_interested","wrong_person","asks_if_bot","other","plan": one of "monthly","annual","monthly_seo","reply": string}. Use "ready_to_buy" ONLY when they clearly say they want to go ahead and pay or sign up (e.g. "let's do it", "how do I sign up", "send me the link to pay", "I'll take it"); a yes to seeing the sample, a maybe, or a question is NOT ready_to_buy. "plan": "annual" only if they chose paying the year up front, "monthly_seo" only if they asked for the SEO add-on, otherwise "monthly". For ready_to_buy set "reply" to "". "reply" is a short friendly plain-ASCII text from Zac (max 220 chars, no emoji) or "" if no reply should be sent. Rules: never state any price or timeline unless it appears in OFFER below; if price is asked and OFFER is empty, reply that you'll grab the details and text right back; never promise anything not in OFFER; if they ask whether this is a bot/automated/AI, intent "asks_if_bot" and reply ""; if not_interested/wrong_person, reply "" ; keep the sender's casual local voice; never mention the other brand.\nOFFER: ${(L.brand === 'zw' ? S.settings.offerZw : [S.settings.offer, VARIANTS[L.variant]?.offer].filter(Boolean).join(' ')) || '(none)'}`,
         user: `Business: ${L.name}\nOur text: ${L.msg}\n${L.linkSent ? 'We already sent them the sample link.' : 'We have not sent the link yet; a separate message with the link is sent automatically, so your reply must NOT include a link.'}\nTheir reply: ${text}`, maxTokens: 1000,
       }, fetchImpl);
       day().spend += COST.triage;
@@ -296,7 +314,9 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     }
     // They said yes to buying: the bot sends the right payment link itself (unless Zac already took over).
     if (c.intent === 'ready_to_buy' && L.linkSent) {
-      const brand = brandOf(L); const plan = PLANS[brand][c.plan] ? c.plan : 'monthly';
+      const brand = brandOf(L); let plan = PLANS[brand][c.plan] ? c.plan : 'monthly';
+      const V = VARIANTS[L.variant];
+      if (brand === 'rgs' && plan === 'monthly' && V?.plan && (!V.days || now().getTime() - (L.firstSentAt || Date.parse(L.created)) <= V.days * DAY)) plan = V.plan;
       L.zwDueAt = null; L.inZwQueue = false; L.needsYou = true; (L.hot ||= {})[brand] = true; L.status = 'hot';
       await move(L, 'RESPOND_YES');
       const already = (L.payLinks || []).find((k) => k.brand === brand && k.plan === plan);
@@ -424,7 +444,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
       const lastIn = L.replies.filter((r) => !r.bot && !r.me).slice(-1)[0];
       return { id: L.id, name: L.name, trade: L.trade, town: L.town, phone: L.phone, brand: brandOf(L), pipe: st.pipe, stage: st.stage, status: L.status,
         needsYou: !!L.needsYou, unread: !!L.unread, lastAt: lastAt(L), last: lastIn?.text || '', intent: L.lastIntent || '', url: L.url || '', zwUrl: L.zwUrl || '',
-        angle: L.angle || '', why: L.why || '', paid: L.paid || null, payLinks: (L.payLinks || []).map(({ url, plan, brand, at }) => ({ url, plan, brand, at })), contactId: L.contactId };
+        angle: L.angle || '', why: L.why || '', variant: VARIANTS[L.variant]?.label || '', paid: L.paid || null, payLinks: (L.payLinks || []).map(({ url, plan, brand, at }) => ({ url, plan, brand, at })), contactId: L.contactId };
     }).sort((a, b) => b.lastAt - a.lastAt);
   }
   async function thread(id) {
@@ -505,7 +525,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     const spend = days.reduce((a, [, v]) => a + (v.spend || 0), 0);
     const rgs = brandM('rgs'), zw = brandM('zw');
     const replies = rgs.replied + zw.replied, wins = rgs.won + zw.won;
-    return { rgs, zw, byAngle: by((L) => L.angle || angleOf(L)), byTrade: by((L) => L.trade), spend,
+    return { rgs, zw, byVariant: by((L) => (L.brand === 'zw' && !L.step ? null : VARIANTS[L.variant]?.label || 'Before split test')), byAngle: by((L) => L.angle || angleOf(L)), byTrade: by((L) => L.trade), spend,
       perReply: replies ? spend / replies : null, perWin: wins ? spend / wins : null,
       days: days.slice(-14).map(([date, v]) => ({ date, texts: v.texts || 0, replies: v.replies || 0, spend: v.spend || 0 })) };
   }
@@ -516,7 +536,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     return {
       locationId: env.GHL_LOCATION_ID || '', settings: S.settings, paused: S.paused, today: d, effCap: effCap(), week: week.map(([date, v]) => ({ date, ...v })),
       needsYou: leads.filter((L) => L.needsYou).map((L) => ({ id: L.id, name: L.name, phone: L.phone, contactId: L.contactId, last: L.replies.filter((r) => !r.bot).slice(-1)[0]?.text || '', intent: L.lastIntent })),
-      drafts: leads.filter((L) => L.status === 'drafted').slice(0, 8).map((L) => ({ id: L.id, name: L.name, msg: L.msg, url: L.url, why: L.why || '' })),
+      drafts: leads.filter((L) => L.status === 'drafted').slice(0, 8).map((L) => ({ id: L.id, name: L.name, msg: L.msg, url: L.url, why: L.why || '', variant: VARIANTS[L.variant]?.label || '' })),
       testActive: leads.some((L) => L.test), testLead: (leads.find((L) => L.test) || null) && (({ msg, url, replies, lastIntent, brand }) => ({ msg, url, replies, lastIntent, brand }))(leads.find((L) => L.test)), zwScheduled: leads.filter((L) => L.zwDueAt && !L.zwSentAt).length, counts: leads.reduce((a, L) => ((a[L.status] = (a[L.status] || 0) + 1), a), {}), events: S.events.slice(0, 40),
       setup: { claude: !!env.ANTHROPIC_API_KEY, ghl: ghlReady(), publicUrl: !!publicUrl(), stages: !!(stage('TEXTED') && stage('RESPOND_YES')), zwPipeline: zwPipe(), webhook: !!env.GHL_WEBHOOK_SECRET, alerts: !!env.ALERT_CONTACT_ID, numberRgs: !!(env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER), numberZw: !!env.GHL_FROM_NUMBER_ZW, inWindow: canSendNow(now()) },
     };
