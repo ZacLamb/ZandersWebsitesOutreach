@@ -146,6 +146,12 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
   async function draftOne() {
     load();
     if (!env.ANTHROPIC_API_KEY || !publicUrl()) return false;
+    // refresh drafts written before personalization so what you review is what goes out
+    const stale = Object.values(S.leads).find((x) => x.status === 'drafted' && !x.researched && !x.test);
+    if (stale) {
+      if (!room(COST.msg + COST.research)) return false;
+      await personalize(stale); ev('draft', `Rewrote the text for ${stale.name} with research`, stale.id); save(); return true;
+    }
     if (!room(COST.site + COST.msg + COST.research)) return false;
     const p = deps.nextProspect(new Set(Object.keys(S.leads)), new Set(S.optOut));
     if (!p) return false;
@@ -311,7 +317,8 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
       // supply: keep a small buffer of drafts, top up leads with a daily search batch
       const drafted = Object.values(S.leads).filter((L) => L.status === 'drafted').length;
       const cap = effCap(), d = day();
-      if (drafted < Math.min(5, cap - d.texts)) { if (await draftOne()) return; }
+      const stale = Object.values(S.leads).some((L) => L.status === 'drafted' && !L.researched && !L.test);
+      if (stale || drafted < Math.min(5, cap - d.texts)) { if (await draftOne()) return; }
       if (deps.readyCount(new Set(Object.keys(S.leads)), new Set(S.optOut)) < 15 && d.searches < 60 && !deps.jobRunning() && room(60 * COST.search) && env.GOOGLE_PLACES_KEY) {
         if (deps.startFind(60)) { d.searches += 60; d.spend += 60 * COST.search; ev('search', 'Started a 60-search batch to find more leads'); save(); }
       }
