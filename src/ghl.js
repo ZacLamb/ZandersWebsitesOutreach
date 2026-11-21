@@ -61,7 +61,7 @@ export async function stageProspect(env, p, { tags = [], fetchImpl = fetch } = {
 // ---- messaging + pipeline helpers used by the autopilot (src/autopilot.js) ----
 export const sendSms = (env, contactId, message, fetchImpl = fetch, fromNumber = env.GHL_FROM_NUMBER) =>
   call(env, 'POST', '/conversations/messages', { type: 'SMS', contactId, message, ...(fromNumber ? { fromNumber } : {}) }, fetchImpl, '2021-04-15');
-export const moveOpportunity = (env, oppId, stageId, fetchImpl = fetch) =>
-  stageId && oppId ? call(env, 'PUT', `/opportunities/${oppId}`, { pipelineStageId: stageId, pipelineId: env.GHL_PIPELINE_ID }, fetchImpl) : null;
+export const moveOpportunity = (env, oppId, stageId, fetchImpl = fetch, pipelineId = env.GHL_PIPELINE_ID) =>
+  stageId && oppId ? call(env, 'PUT', `/opportunities/${oppId}`, { pipelineStageId: stageId, pipelineId }, fetchImpl) : null;
 export const addTags = (env, contactId, tags, fetchImpl = fetch) => call(env, 'POST', `/contacts/${contactId}/tags`, { tags }, fetchImpl);
 export const removeTags = (env, contactId, tags, fetchImpl = fetch) => call(env, 'DELETE', `/contacts/${contactId}/tags`, { tags }, fetchImpl);

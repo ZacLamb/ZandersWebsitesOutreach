@@ -216,3 +216,29 @@ test('a bad model text (has a link) falls back to the safe template', async () =
   const { ap } = setup(); const L = { name: "Joe's Roofing" };
   assert.match(templateMessage(L, '', 0), /want me to send it over\?$/);
 });
+
+test('two pipelines: RGS card moves to Zander pipeline on a no, then Texted / Opted Out there', async () => {
+  let clock = SAT_3PM_ET.getTime();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap3-')); const log = [];
+  const base = mockFetch(log);
+  let triage = 'not_interested';
+  const fetchImpl = async (url, init = {}) => {
+    if (url.includes('anthropic') && /Their reply:/.test(JSON.parse(init.body).messages[0].content)) { log.push({ url, body: JSON.parse(init.body) }); return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: JSON.stringify({ intent: triage, reply: '' }) }] }) }; }
+    return base(url, init);
+  };
+  const queue = [{ place_id: 'ChIJ7', name: 'Cape Decks', phone: '(508) 555-0199', trade: 'pest control', town: 'Bourne, MA', tier: 'A', web_type: 'none' }];
+  const env = { ANTHROPIC_API_KEY: 'k', GHL_TOKEN: 't', GHL_LOCATION_ID: 'L', GHL_PIPELINE_ID: 'RGSP', GHL_STAGE_NEW_LEAD: 'R0', GHL_STAGE_TEXTED: 'R1', GHL_STAGE_RESPOND: 'R2', GHL_STAGE_RESPOND_YES: 'R3', GHL_STAGE_OPTED_OUT: 'R6',
+    GHL_ZW_PIPELINE_ID: 'ZWP', GHL_ZW_STAGE_QUEUED: 'Z0', GHL_ZW_STAGE_TEXTED: 'Z1', GHL_ZW_STAGE_RESPOND: 'Z2', GHL_ZW_STAGE_RESPOND_YES: 'Z3', GHL_ZW_STAGE_NOT_INTERESTED: 'Z5', GHL_ZW_STAGE_NO_RESPONSE: 'Z6', GHL_ZW_STAGE_OPTED_OUT: 'Z7',
+    GHL_FROM_NUMBER_RGS: '+1RGS', GHL_FROM_NUMBER_ZW: '+1ZW', PUBLIC_URL: 'https://x.app' };
+  const ap = createAutopilot({ env, dir, fetchImpl, now: () => new Date(clock), log: () => {}, deps: { nextProspect: () => queue.shift() || null, readyCount: () => 0, markState() {}, jobRunning: () => false, startFind: () => false } });
+  ap.setSettings({ mode: 'auto' }); await ap.tick(); await ap.tick();
+  const puts = () => log.filter((l) => l.method === 'PUT').map((l) => `${l.body.pipelineId}:${l.body.pipelineStageId}`);
+  assert.deepEqual(puts(), ['RGSP:R1']);
+  await ap.handleInbound({ contactId: 'c1', text: 'no thanks' }); // a straight no to the ask
+  assert.equal(puts().at(-1), 'ZWP:Z0');
+  clock += 7 * 864e5 + 3600e3; while (new Date(clock).getUTCDay() === 0) clock += 864e5;
+  ap._state().nextSendAt = 0; ap._state().pending = []; await ap.tick();
+  assert.equal(puts().at(-1), 'ZWP:Z1');
+  await ap.handleInbound({ contactId: 'c1', text: 'STOP' });
+  assert.equal(puts().at(-1), 'ZWP:Z7');
+});

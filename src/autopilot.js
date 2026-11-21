@@ -68,6 +68,22 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
   const effCap = () => { load(); const active = Object.values(S.days).filter((d) => d.texts > 0).length; return Math.min(S.settings.dailyTextCap, 20 + 10 * active); }; // warm-up ramp
   const room = (cost) => day().spend + cost <= S.settings.dailyBudget;
   const stage = (k) => env[`GHL_STAGE_${k}`];
+  // Two pipelines: RGS Outreach (GHL_PIPELINE_ID / GHL_STAGE_*) and Zander's Websites Outreach (GHL_ZW_PIPELINE_ID / GHL_ZW_STAGE_*).
+  // A lead lives in the pipeline of the brand that is talking to it; a no-go for RGS moves the same card into Zander's.
+  const zwPipe = () => !!(env.GHL_ZW_PIPELINE_ID && env.GHL_ZW_STAGE_TEXTED);
+  async function move(L, key, brand = L.brand === 'zw' ? 'zw' : 'rgs') {
+    if (!L.oppId) return;
+    const zw = brand === 'zw' && zwPipe();
+    const id = zw ? env[`GHL_ZW_STAGE_${key}`] : stage(key);
+    try { await moveOpportunity(env, L.oppId, id, fetchImpl, zw ? env.GHL_ZW_PIPELINE_ID : env.GHL_PIPELINE_ID); }
+    catch (e) { ev('warn', `stage move failed (${key}): ${e.message}`, L.id); }
+  }
+  // RGS is a no-go: hand the card to Zander's pipeline, queued for the Zander text a week out.
+  async function toZander(L) {
+    L.zwDueAt = now().getTime() + S.settings.zwDelayDays * DAY;
+    if (env.GHL_FROM_NUMBER_ZW && zwPipe()) { L.inZwQueue = true; await move(L, 'QUEUED', 'zw'); }
+    else await move(L, L.replies.length ? 'NOT_INTERESTED' : 'NO_RESPONSE');
+  }
   const pause = (why) => { load().paused = why; ev('paused', why); save(); };
   const ghlReady = () => !!(env.GHL_TOKEN && env.GHL_LOCATION_ID && env.GHL_PIPELINE_ID && env.GHL_STAGE_NEW_LEAD);
   const publicUrl = () => env.PUBLIC_URL || (env.RAILWAY_PUBLIC_DOMAIN ? `https://${env.RAILWAY_PUBLIC_DOMAIN}` : '');
@@ -151,10 +167,12 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     // close out leads that never answered both follow-ups, then follow-ups, then new drafts
     const t = now().getTime();
     const quiet = (x) => x.status === 'sent' && !x.replies.length;
+    const zq = Object.values(S.leads).find((x) => x.status === 'zw_sent' && t - x.zwSentAt >= 7 * DAY && !x.replies.some((r) => !r.bot && Date.parse(r.at) > x.zwSentAt));
+    if (zq) { zq.status = 'zw_no_response'; ev('info', `No response to Zander's text from ${zq.name}`, zq.id); await move(zq, 'NO_RESPONSE'); save(); return true; }
     const done = Object.values(S.leads).find((x) => quiet(x) && x.step === 3 && t - x.lastSentAt >= 4 * DAY);
     if (done) {
-      done.status = 'no_response'; done.zwDueAt = t + (S.settings.zwDelayDays * DAY); ev('info', `No response from ${done.name}; closing out (Zander's Websites follow-up scheduled)`, done.id);
-      try { await moveOpportunity(env, done.oppId, stage('NO_RESPONSE'), fetchImpl); } catch {} save(); return true;
+      done.status = 'no_response'; ev('info', `No response from ${done.name}; moved to Zander's Websites (text goes out in ${S.settings.zwDelayDays} days)`, done.id);
+      await toZander(done); save(); return true;
     }
     const due = Object.values(S.leads).find((x) => quiet(x) && ((x.step === 1 && t - x.lastSentAt >= 3 * DAY) || (x.step === 2 && t - x.lastSentAt >= 4 * DAY)));
     let L = due, step = due ? due.step : 0;
@@ -168,6 +186,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
           const m2 = await zanderWrite(z);
           await sendSms(env, z.contactId, m2, fetchImpl, env.GHL_FROM_NUMBER_ZW);
           d.texts++; d.spend += segments(m2) * COST.sms; z.zwSentAt = t; z.brand = 'zw'; z.status = 'zw_sent'; z.botReplies = 0; z.msg = m2; z.linkSent = false; z.url = z.zwUrl;
+          z.inZwQueue = false; await move(z, 'TEXTED');
           try { await addTags(env, z.contactId, ['zw-zander-pitch'], fetchImpl); } catch {}
           ev('send', `Zander's Websites text to ${z.name}`, z.id);
           S.nextSendAt = t + ((9.5 * 3600e3) / effCap()) * (0.7 + Math.random() * 0.6);
@@ -191,12 +210,12 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
       await sendSms(env, L.contactId, msg, fetchImpl, env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER);
       d.texts++; d.spend += segments(msg) * COST.sms; d.errors = 0;
       L.step = step + 1; L.lastSentAt = now().getTime(); L.status = 'sent';
-      if (step === 0) { try { await moveOpportunity(env, L.oppId, stage('TEXTED'), fetchImpl); } catch (e) { ev('warn', `stage move failed: ${e.message}`, L.id); } }
+      if (step === 0) await move(L, 'TEXTED');
       ev('send', `${step === 0 ? 'Texted' : 'Follow-up ' + step + ' to'} ${L.name}`, L.id);
       const gap = (9.5 * 3600e3) / effCap(); S.nextSendAt = t + gap * (0.7 + Math.random() * 0.6);
     } catch (e) {
       d.errors++; ev('error', `Send failed for ${L.name}: ${e.message}`, L.id);
-      if (/landline|invalid|not a valid|cannot be sent/i.test(e.message)) { L.status = 'bad_number'; try { await moveOpportunity(env, L.oppId, stage('BAD_NUMBER'), fetchImpl); } catch {} }
+      if (/landline|invalid|not a valid|cannot be sent/i.test(e.message)) { L.status = 'bad_number'; await move(L, 'BAD_NUMBER'); }
       if (d.errors >= 5) pause('5 send errors in a row. Check the number/A2P status in GHL, then resume.');
     }
     save(); return true;
@@ -230,7 +249,9 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     if (isOptOut(body)) {
       L.status = 'opted_out'; if (!S.optOut.includes(L.phone)) S.optOut.push(L.phone); day().optouts++;
       ev('optout', `${L.name} opted out`, L.id);
-      try { await addTags(env, contactId, ['zw-optout'], fetchImpl); await moveOpportunity(env, L.oppId, stage('NOT_INTERESTED'), fetchImpl); } catch {}
+      L.zwDueAt = null; L.inZwQueue = false;
+      try { await addTags(env, contactId, ['zw-optout'], fetchImpl); } catch {}
+      await move(L, 'OPTED_OUT');
       const d = day(); if (d.texts >= 10 && d.optouts / d.texts > 0.08) pause(`Opt-outs are ${Math.round((100 * d.optouts) / d.texts)}% of today's texts. Review the message before resuming.`);
       save(); return { optout: true };
     }
@@ -239,7 +260,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
       // They answered the ask-first text: send the sample link. Only a price question also pulls Zac in.
       L.linkSent = true; L.status = 'link_sent';
       S.pending.push({ id: L.id, at: now().getTime() + 30e3 + Math.random() * 60e3, text: linkMessage(L, L.url, L.brand) });
-      try { await moveOpportunity(env, L.oppId, stage('RESPOND'), fetchImpl); } catch {}
+      L.zwDueAt = null; L.inZwQueue = false; await move(L, 'RESPOND');
       if (c.intent === 'price' || c.intent === 'objection') {
         L.needsYou = true; await alertZac(`ZW lead: ${L.name} replied "${body.slice(0, 120)}"`);
         if (c.reply) S.pending.push({ id: L.id, at: now().getTime() + 120e3 + Math.random() * 60e3, text: c.reply });
@@ -247,14 +268,20 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
       ev('reply', `${L.name}: "${body.slice(0, 80)}" -> sending the sample link`, L.id);
       save(); return { intent: c.intent, link: true };
     }
-    if (L.brand !== 'zw' && ['not_interested', 'objection'].includes(c.intent) && !L.zwSentAt) L.zwDueAt = now().getTime() + S.settings.zwDelayDays * DAY;
-    if (['interested', 'price'].includes(c.intent)) L.zwDueAt = null;
+    const rgs = L.brand !== 'zw';
+    if (rgs && c.intent === 'objection' && !L.zwSentAt) L.zwDueAt = now().getTime() + S.settings.zwDelayDays * DAY; // Zac gets a shot first; Zander follows if it goes nowhere
+    if (['interested', 'price'].includes(c.intent)) { L.zwDueAt = null; L.inZwQueue = false; }
     const hot = ['interested', 'price', 'objection', 'asks_if_bot', 'other', 'question'].includes(c.intent);
-    if (c.intent === 'not_interested' || c.intent === 'wrong_person') {
-      L.status = 'closed'; try { await moveOpportunity(env, L.oppId, stage('NOT_INTERESTED'), fetchImpl); } catch {}
+    if (c.intent === 'not_interested') {
+      L.status = 'closed';
+      if (rgs && !L.zwSentAt) { await toZander(L); ev('info', `${L.name} said no to RGS; moved to Zander's Websites`, L.id); }
+      else await move(L, 'NOT_INTERESTED');
+    } else if (c.intent === 'wrong_person') {
+      L.status = 'closed'; L.zwDueAt = null; L.inZwQueue = false; await move(L, rgs ? 'BAD_NUMBER' : 'NOT_INTERESTED');
     } else if (hot) {
       L.status = 'hot'; L.needsYou = true;
-      try { await moveOpportunity(env, L.oppId, ['interested', 'price'].includes(c.intent) ? stage('RESPOND_YES') : stage('RESPOND'), fetchImpl); await addTags(env, contactId, ['zw-hot'], fetchImpl); } catch {}
+      await move(L, ['interested', 'price'].includes(c.intent) ? 'RESPOND_YES' : 'RESPOND');
+      try { await addTags(env, contactId, ['zw-hot'], fetchImpl); } catch {}
       await alertZac(`ZW lead: ${L.name} replied "${body.slice(0, 120)}"`);
     }
     if (c.reply && L.botReplies < S.settings.maxBotReplies) { S.pending.push({ id: L.id, at: now().getTime() + 45e3 + Math.random() * 75e3, text: c.reply }); L.botReplies++; }
@@ -342,7 +369,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
       needsYou: leads.filter((L) => L.needsYou).map((L) => ({ id: L.id, name: L.name, phone: L.phone, contactId: L.contactId, last: L.replies.filter((r) => !r.bot).slice(-1)[0]?.text || '', intent: L.lastIntent })),
       drafts: leads.filter((L) => L.status === 'drafted').slice(0, 8).map((L) => ({ id: L.id, name: L.name, msg: L.msg, url: L.url, why: L.why || '' })),
       testActive: leads.some((L) => L.test), testLead: (leads.find((L) => L.test) || null) && (({ msg, url, replies, lastIntent, brand }) => ({ msg, url, replies, lastIntent, brand }))(leads.find((L) => L.test)), zwScheduled: leads.filter((L) => L.zwDueAt && !L.zwSentAt).length, counts: leads.reduce((a, L) => ((a[L.status] = (a[L.status] || 0) + 1), a), {}), events: S.events.slice(0, 40),
-      setup: { claude: !!env.ANTHROPIC_API_KEY, ghl: ghlReady(), publicUrl: !!publicUrl(), stages: !!(stage('TEXTED') && stage('RESPOND_YES')), webhook: !!env.GHL_WEBHOOK_SECRET, alerts: !!env.ALERT_CONTACT_ID, numberRgs: !!(env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER), numberZw: !!env.GHL_FROM_NUMBER_ZW, inWindow: canSendNow(now()) },
+      setup: { claude: !!env.ANTHROPIC_API_KEY, ghl: ghlReady(), publicUrl: !!publicUrl(), stages: !!(stage('TEXTED') && stage('RESPOND_YES')), zwPipeline: zwPipe(), webhook: !!env.GHL_WEBHOOK_SECRET, alerts: !!env.ALERT_CONTACT_ID, numberRgs: !!(env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER), numberZw: !!env.GHL_FROM_NUMBER_ZW, inWindow: canSendNow(now()) },
     };
   }
   return { tick, handleInbound, setSettings, resume, resolve, view, testSend, endTest, _state: () => load() };
