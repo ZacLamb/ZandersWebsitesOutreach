@@ -24,7 +24,7 @@ test('opt-out detection', () => {
 
 test('first text asks permission: ASCII, short, no link, no opt-out line', () => {
   const m = templateMessage({ name: "Joe's Roofing", web_type: 'none', reviews: '12' }, 'https://x.up.railway.app/s/joes-abc123', 0);
-  assert.match(m, /- Zac$/); assert.ok(!/^(hey|hi)?,? ?zac/i.test(m)); assert.ok(m.length < 160); assert.ok(!/STOP|http/i.test(m)); assert.match(m, /\? - Zac$/);
+  assert.match(m, /^Hey! Came across/); assert.ok(m.length < 160); assert.ok(!/\$|free/i.test(m)); assert.ok(!/STOP|http/i.test(m)); assert.match(m, /website\?$/);
   assert.ok(/^[\x20-\x7E]+$/.test(m)); assert.ok(segments(m) <= 3);
 });
 
@@ -41,7 +41,7 @@ function mockFetch(log) {
     log.push({ url, method: init.method, body });
     if (url.includes('anthropic')) {
       if (body.system.includes('sample websites')) return J({ content: [{ type: 'text', text: '<!doctype html><html><body><h1>[[NAME]]</h1><p>[[TOWN]] [[PHONE]]</p><a href="tel:[[PHONE_DIGITS]]">Call</a></body></html>' }] });
-      if (body.system.includes('ONE first cold text')) return J({ content: [{ type: 'text', text: JSON.stringify({ text: "Mike, folks keep saying Joe's Roofing leaves every job spotless, but with no website Google sends roofing searches to competitors. Your new site is already built and can be live this week, no contract. Want me to send it over? - Zac", why: 'clean-up praise, no website' }) }] });
+      if (body.system.includes('ONE first cold text')) return J({ content: [{ type: 'text', text: JSON.stringify({ text: "Hey Mike! Came across Joe's Roofing on Google, do you guys have a website? -Zac", why: 'clean-up praise, no website' }) }] });
       if (body.system.includes('Zander, a 7 year old')) return J({ content: [{ type: 'text', text: "Hi! I'm Zander and I'm 7. People say you clean up really good! I made Joe's Roofing a free website. It's $20 a month and no setup fee. Can I send it to you?" }] });
       if (/Their reply: sure/.test(body.messages[0].content)) return J({ content: [{ type: 'text', text: '{"intent":"interested","reply":""}' }] });
       return J({ content: [{ type: 'text', text: '{"intent":"price","reply":"Good question, let me grab the details and text you right back."}' }] });
@@ -72,7 +72,7 @@ test('auto mode drafts, stages in GHL, texts once, moves stage, tracks spend', a
   const { ap, log, marks, dir } = setup(); ap.setSettings({ mode: 'auto', dailyBudget: 5, dailyTextCap: 25 });
   await ap.tick(); await ap.tick();
   const sms = log.filter((l) => l.url.endsWith('/conversations/messages'));
-  assert.equal(sms.length, 1); assert.equal(sms[0].body.contactId, 'c1'); assert.ok(!/http/.test(sms[0].body.message)); assert.match(sms[0].body.message, /send it/);
+  assert.equal(sms.length, 1); assert.equal(sms[0].body.contactId, 'c1'); assert.ok(!/http/.test(sms[0].body.message)); assert.match(sms[0].body.message, /website\?/);
   assert.ok(log.some((l) => l.method === 'PUT' && l.body.pipelineStageId === 'S1'));
   const v = ap.view(); assert.equal(v.today.texts, 1); assert.ok(v.today.spend > 0 && v.today.spend < 1); assert.equal(marks.ChIJ1, 'created');
   assert.equal(fs.readdirSync(path.join(dir, 'sites')).filter((f) => f.endsWith('.html')).length, 1);
@@ -209,12 +209,12 @@ test('personalized first text: researches reviews + their site, writes with the 
   assert.equal(w.body.model, 'claude-opus-5-5');
   const u = w.body.messages[0].content;
   assert.match(u, /spotless/); assert.match(u, /NO mobile layout/); assert.match(u, /copyright 2014/);
-  const d = ap.view().drafts[0]; assert.match(d.msg, /spotless/); assert.ok(!/http/.test(d.msg)); assert.match(d.msg, /\? - Zac$/); assert.equal(d.why, 'clean-up praise, no website');
+  const d = ap.view().drafts[0];  assert.ok(!/http/.test(d.msg)); assert.match(d.msg, /website\? -Zac$/); assert.equal(d.why, 'clean-up praise, no website');
 });
 
 test('a bad model text (has a link) falls back to the safe template', async () => {
   const { ap } = setup(); const L = { name: "Joe's Roofing" };
-  assert.match(templateMessage(L, '', 0), /Want me to send it over\? - Zac$/);
+  assert.match(templateMessage(L, '', 0), /do you guys have a website\?$/);
 });
 
 test('two pipelines: RGS card moves to Zander pipeline on a no, then Texted / Opted Out there', async () => {
@@ -329,6 +329,16 @@ test('offer split test: leads rotate through all 4 offers and the writer gets th
   const vs = Object.values(ap._state().leads).map((L) => L.variant).sort();
   assert.deepEqual(vs, ['guarantee', 'plain', 'thisweek', 'trial']);
   const prompts = log.filter((l) => l.url.includes('anthropic') && l.body.system.includes('ONE first cold text')).map((l) => l.body.system);
-  assert.ok(prompts.some((p) => /get the \$497 build fee back/.test(p)) && prompts.some((p) => /First month is free/.test(p)));
-  assert.ok(prompts.every((p) => /NEVER in the opening/.test(p)));
+  assert.ok(prompts.some((p) => /mysterious tease/.test(p)) && prompts.some((p) => /he is local/.test(p)));
+  assert.ok(prompts.every((p) => /No price, cost/.test(p)));
+  assert.deepEqual(Object.values(ap._state().leads).map((L) => L.opener).sort().slice(0, 3), ['ask', 'ask', 'local']);
+});
+
+test('a "no" to "do you have a website?" is an opening: the site link goes out, not a Zander handoff', async () => {
+  const { ap, log } = setup(); ap.setSettings({ mode: 'auto' }); await ap.tick(); await ap.tick();
+  const sys = []; const orig = log.push.bind(log);
+  await ap.handleInbound({ contactId: 'c1', text: 'no' });
+  const tri = log.filter((l) => l.url.includes('anthropic') && /Their reply: no/.test(l.body.messages?.[0]?.content || '')).at(-1);
+  assert.match(tri.body.system, /are NOT rejections/);
+  assert.match(ap._state().pending[0].text, /put one together .* already: https:\/\/x\.up\.railway\.app\/s\//);
 });
