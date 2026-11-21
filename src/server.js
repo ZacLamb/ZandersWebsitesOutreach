@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { buildIndex, parseCsv } from './exclusions.js';
 import { TOWNS, TRADES } from './towns.js';
+import { createAutopilot } from './autopilot.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA_DIR = path.resolve(process.env.DATA_DIR || ROOT);
@@ -70,6 +71,20 @@ function searchProgress() {
   return { done, possible };
 }
 
+const digits10 = (p) => String(p || '').replace(/\D/g, '').slice(-10);
+const candidates = (skipIds, optOut) => { const st = readPushed(); return prospects().rows.filter((r) => r.tier !== 'C' && !r.state && !st[r.place_id] && !skipIds.has(r.place_id) && digits10(r.phone).length === 10 && !optOut.has(digits10(r.phone))); };
+const autopilot = createAutopilot({
+  dir: DATA_DIR,
+  deps: {
+    nextProspect: (skip, opt) => candidates(skip, opt)[0] || null,
+    readyCount: (skip, opt) => candidates(skip, opt).length,
+    markState: (id, v) => { const st = readPushed(); st[id] = v; fs.writeFileSync(PUSHED(), JSON.stringify(st)); },
+    jobRunning: () => job.running,
+    startFind: (n) => clientStatus().present && !!process.env.GOOGLE_PLACES_KEY && startJob('find', ['find', '--max-queries', String(n)]),
+  },
+});
+setInterval(() => autopilot.tick().catch((e) => console.error('autopilot tick:', e.message)), 20000);
+
 const readBody = (req, max = 3e6) => new Promise((resolve, reject) => {
   let n = 0; const chunks = [];
   req.on('data', (c) => { n += c.length; if (n > max) { reject(new Error('body too large')); req.destroy(); } else chunks.push(c); });
@@ -82,6 +97,25 @@ const int = (v, d, lo, hi) => Math.min(hi, Math.max(lo, Number.isFinite(+v) && v
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   if (url.pathname === '/health') return send(res, 200, 'ok', 'text/plain');
+  // Public sample sites (no scripts allowed by CSP) and the GHL reply webhook (secret in query string).
+  const sm = url.pathname.match(/^\/s\/([a-z0-9-]{6,80})$/);
+  if (req.method === 'GET' && sm) {
+    const f = path.join(DATA_DIR, 'sites', `${sm[1]}.html`);
+    if (!fs.existsSync(f)) return send(res, 404, 'Not found', 'text/plain');
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; font-src https: data:", 'X-Robots-Tag': 'noindex, nofollow', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'public, max-age=300' });
+    return res.end(fs.readFileSync(f));
+  }
+  if (req.method === 'POST' && url.pathname === '/hook/ghl') {
+    if (!process.env.GHL_WEBHOOK_SECRET || !safeEq(url.searchParams.get('s') || '', process.env.GHL_WEBHOOK_SECRET)) return send(res, 401, { error: 'bad secret' });
+    try {
+      const b = JSON.parse((await readBody(req, 2e5)) || '{}');
+      const contactId = b.contact_id || b.contactId || b.contact?.id;
+      const text = (typeof b.message === 'object' ? b.message?.body : b.message) || b.body || b.text || '';
+      const dir = String(b.direction || b.message?.direction || 'inbound').toLowerCase();
+      if (!contactId || dir === 'outbound') return send(res, 200, { ignored: true });
+      return send(res, 200, await autopilot.handleInbound({ contactId, text }));
+    } catch (e) { return send(res, 400, { error: e.message }); }
+  }
   // Basic auth on everything else
   const m = (req.headers.authorization || '').match(/^Basic (.+)$/);
   const [, pw = ''] = m ? Buffer.from(m[1], 'base64').toString().match(/^[^:]*:(.*)$/) || [] : [];
@@ -95,6 +129,7 @@ const server = http.createServer(async (req, res) => {
         states: Object.keys(TOWNS), trades: TRADES, townCounts: Object.fromEntries(Object.entries(TOWNS).map(([k, v]) => [k, v.length])),
       });
     }
+    if (req.method === 'GET' && url.pathname === '/api/autopilot') return send(res, 200, autopilot.view());
     if (req.method === 'GET' && url.pathname === '/api/prospects') return send(res, 200, prospects());
     if (req.method === 'GET' && url.pathname === '/out/prospects.csv') {
       const f = path.join(OUT, 'prospects.csv');
@@ -102,6 +137,14 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'POST') {
       if (req.headers['x-zw'] !== '1') return send(res, 403, { error: 'missing X-ZW header' }); // blocks cross-site form posts
+      if (url.pathname.startsWith('/api/autopilot/')) {
+        const o = JSON.parse((await readBody(req, 1e5)) || '{}');
+        if (url.pathname.endsWith('/settings')) autopilot.setSettings(o);
+        else if (url.pathname.endsWith('/resume')) autopilot.resume();
+        else if (url.pathname.endsWith('/resolve')) autopilot.resolve(String(o.id || ''));
+        else return send(res, 404, { error: 'not found' });
+        return send(res, 200, autopilot.view());
+      }
       if (url.pathname === '/api/clients') {
         const body = await readBody(req);
         const idx = buildIndex(body);

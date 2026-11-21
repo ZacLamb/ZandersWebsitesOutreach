@@ -4,7 +4,7 @@
   "description": "Finds New England trade businesses with weak or no websites, excludes existing clients, and stages them in the GHL 50$ Sites pipeline.",
   "type": "module",
   "scripts": {
-    "test": "node --test test/prospector.test.js",
+    "test": "node --test test/prospector.test.js test/autopilot.test.js",
     "exclusions": "node src/run.js exclusions",
     "find": "node src/run.js find",
     "push": "node src/run.js push",

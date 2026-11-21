@@ -36,3 +36,10 @@ Upload the client sheet, run searches, review ranked leads, preview/push to GHL.
 Env vars: `ADMIN_PASSWORD` (required, 8+ chars), `GOOGLE_PLACES_KEY`, `GHL_TOKEN`, `GHL_LOCATION_ID`,
 `GHL_PIPELINE_ID`, `GHL_STAGE_NEW_LEAD`, `DATA_DIR` (point at a mounted volume, e.g. `/data`, so the
 client sheet and results survive redeploys).
+
+## Autopilot (off by default)
+Dashboard card "Autopilot": Off / Draft only / Autopilot. It generates a sample site per lead (served publicly at `/s/<slug>`, scripts blocked by CSP),
+writes a text in Zac's voice, stages the lead in GHL, texts within hard caps (daily $ budget, daily text cap with warm-up ramp, Mon-Sat 9-6:30 ET),
+follows up twice, honors STOP, and hands real replies to Zac. It auto-pauses on high opt-out rate or repeated send errors.
+Extra env vars: `ANTHROPIC_API_KEY`, `GHL_WEBHOOK_SECRET` (reply webhook: `POST /hook/ghl?s=<secret>`), `GHL_STAGE_TEXTED`, `GHL_STAGE_RESPOND_YES`,
+`GHL_STAGE_RESPOND`, `GHL_STAGE_NOT_INTERESTED`, `GHL_STAGE_NO_RESPONSE`, `GHL_STAGE_BAD_NUMBER`, optional `ALERT_CONTACT_ID`, `GHL_FROM_NUMBER`.
