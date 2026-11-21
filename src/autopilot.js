@@ -110,12 +110,13 @@ How to personalize (pick the 1-2 strongest, true, specific things):
 Rules: 160-260 characters, plain ASCII, no emoji, NO link and no URL (the sample link is sent only after they say yes), say he built them a free sample site, end by ASKING if they want him to send it over. No price. No hype words (amazing, incredible, game changer). Never invent or exaggerate a fact that is not in the research. Sound like a local guy texting, not a marketer. Include "Zac". Do not mention Google reviews robotically ("I saw your 4.8 rating") unless it is the best angle; specifics beat numbers.
 
 Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 words max"}`,
-        user: brief(p, facts), maxTokens: 400,
+        user: brief(p, facts), maxTokens: 2500,
       }, fetchImpl);
       // Prefer the JSON shape; if the model answered with just the text, use that.
       let j = {}; const jm = t.match(/\{[\s\S]*\}/);
       if (jm) { try { j = JSON.parse(jm[0]); } catch { j = {}; } }
-      const m = ascii(j.text || t.replace(/^```\w*|```$/g, '').replace(/^["']|["']$/g, '').trim());
+      if (!j.text) { const tm = t.match(/"text"\s*:\s*"((?:[^"\\]|\\.)*)"/); if (tm) j.text = JSON.parse(`"${tm[1]}"`); }
+      const m = ascii(j.text || (/"text"\s*:/.test(t) ? '' : t.replace(/^```\w*|```$/g, '').replace(/^["']|["']$/g, '').trim()));
       if (okText(m)) return { text: m, why: ascii(j.why || '').slice(0, 120) };
       ev('warn', `personalized text for ${p.name} failed checks (${m.length} chars: "${m.slice(0, 60)}..."), using template`, p.place_id || p.id);
     } catch (e) { ev('warn', `message draft fell back to template: ${e.message}`); }
@@ -129,7 +130,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
       const t = await askClaude(env, {
         model: WRITER(),
         system: `Write ONE text from Zander, a 7 year old whose first business is building websites (his dad Zac helps), to a local trade business. Kid voice: simple words, excited, honest, short sentences, a little cute but not babyish. Must include: he is 7, he made them a free website, it is $20 a month with no setup fee, and end by ASKING if he can send it to them. Add ONE true specific thing about this business from the research, phrased the way a kid would (e.g. "people say you always clean up really good"). Never quote a review word for word, never name a reviewer, invent nothing. 160-280 characters, plain ASCII, no emoji, NO link or URL. Never mention Revenue Generating Solutions or any earlier text. Return only the text.`,
-        user: brief(L, L.facts), maxTokens: 300,
+        user: brief(L, L.facts), maxTokens: 2000,
       }, fetchImpl);
       const m = ascii(t);
       day().spend += COST.msg;
@@ -149,7 +150,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     load();
     if (!env.ANTHROPIC_API_KEY || !publicUrl()) return false;
     // refresh drafts written before personalization so what you review is what goes out
-    const stale = Object.values(S.leads).find((x) => x.status === 'drafted' && !x.test && (!x.researched || (!x.why && (x.writes || 0) < 2)));
+    const stale = Object.values(S.leads).find((x) => x.status === 'drafted' && !x.test && (!x.researched || (!x.why && (x.writes || 0) < 4)));
     if (stale) {
       if (!room(COST.msg + COST.research)) return false;
       await personalize(stale); ev('draft', `Rewrote the text for ${stale.name} with research`, stale.id); save(); return true;
@@ -234,7 +235,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     try {
       const out = await askClaude(env, {
         system: `You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websites (Zander, age 7, with his dad Zac helping)" : 'Zac from Revenue Generating Solutions'}, who offered a local trade business a free sample website. Return ONLY JSON: {"intent": one of "interested","price","question","objection","not_interested","wrong_person","asks_if_bot","other","reply": string}. "reply" is a short friendly plain-ASCII text from Zac (max 220 chars, no emoji) or "" if no reply should be sent. Rules: never state any price or timeline unless it appears in OFFER below; if price is asked and OFFER is empty, reply that you'll grab the details and text right back; never promise anything not in OFFER; if they ask whether this is a bot/automated/AI, intent "asks_if_bot" and reply ""; if not_interested/wrong_person, reply "" ; keep the sender's casual local voice; never mention the other brand.\nOFFER: ${(L.brand === 'zw' ? S.settings.offerZw : S.settings.offer) || '(none)'}`,
-        user: `Business: ${L.name}\nOur text: ${L.msg}\n${L.linkSent ? 'We already sent them the sample link.' : 'We have not sent the link yet; a separate message with the link is sent automatically, so your reply must NOT include a link.'}\nTheir reply: ${text}`, maxTokens: 300,
+        user: `Business: ${L.name}\nOur text: ${L.msg}\n${L.linkSent ? 'We already sent them the sample link.' : 'We have not sent the link yet; a separate message with the link is sent automatically, so your reply must NOT include a link.'}\nTheir reply: ${text}`, maxTokens: 1000,
       }, fetchImpl);
       day().spend += COST.triage;
       const j = JSON.parse(out.match(/\{[\s\S]*\}/)[0]);
@@ -319,7 +320,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
       // supply: keep a small buffer of drafts, top up leads with a daily search batch
       const drafted = Object.values(S.leads).filter((L) => L.status === 'drafted').length;
       const cap = effCap(), d = day();
-      const stale = Object.values(S.leads).some((L) => L.status === 'drafted' && !L.test && (!L.researched || (!L.why && (L.writes || 0) < 2)));
+      const stale = Object.values(S.leads).some((L) => L.status === 'drafted' && !L.test && (!L.researched || (!L.why && (L.writes || 0) < 4)));
       if (stale || drafted < Math.min(5, cap - d.texts)) { if (await draftOne()) return; }
       if (deps.readyCount(new Set(Object.keys(S.leads)), new Set(S.optOut)) < 15 && d.searches < 60 && !deps.jobRunning() && room(60 * COST.search) && env.GOOGLE_PLACES_KEY) {
         if (deps.startFind(60)) { d.searches += 60; d.spend += 60 * COST.search; ev('search', 'Started a 60-search batch to find more leads'); save(); }
