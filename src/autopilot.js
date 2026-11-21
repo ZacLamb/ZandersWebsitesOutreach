@@ -112,10 +112,12 @@ Rules: 160-260 characters, plain ASCII, no emoji, NO link and no URL (the sample
 Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 words max"}`,
         user: brief(p, facts), maxTokens: 400,
       }, fetchImpl);
-      const j = JSON.parse(t.match(/\{[\s\S]*\}/)[0]);
-      const m = ascii(j.text || '');
+      // Prefer the JSON shape; if the model answered with just the text, use that.
+      let j = {}; const jm = t.match(/\{[\s\S]*\}/);
+      if (jm) { try { j = JSON.parse(jm[0]); } catch { j = {}; } }
+      const m = ascii(j.text || t.replace(/^```\w*|```$/g, '').replace(/^["']|["']$/g, '').trim());
       if (okText(m)) return { text: m, why: ascii(j.why || '').slice(0, 120) };
-      ev('warn', `personalized text for ${p.name} failed checks, using template`, p.place_id || p.id);
+      ev('warn', `personalized text for ${p.name} failed checks (${m.length} chars: "${m.slice(0, 60)}..."), using template`, p.place_id || p.id);
     } catch (e) { ev('warn', `message draft fell back to template: ${e.message}`); }
     return { text: templateMessage(p, url, 0), why: '' };
   }
@@ -140,14 +142,14 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     if (!L.facts) { try { L.facts = await research(env, L, fetchImpl); } catch { L.facts = {}; } day().spend += COST.research; }
     const r = await writeMessage(L, L.url, L.facts);
     day().spend += COST.msg;
-    L.msg = r.text; L.why = r.why; L.researched = true;
+    L.msg = r.text; L.why = r.why; L.researched = true; L.writes = (L.writes || 0) + 1;
   }
 
   async function draftOne() {
     load();
     if (!env.ANTHROPIC_API_KEY || !publicUrl()) return false;
     // refresh drafts written before personalization so what you review is what goes out
-    const stale = Object.values(S.leads).find((x) => x.status === 'drafted' && !x.researched && !x.test);
+    const stale = Object.values(S.leads).find((x) => x.status === 'drafted' && !x.test && (!x.researched || (!x.why && (x.writes || 0) < 2)));
     if (stale) {
       if (!room(COST.msg + COST.research)) return false;
       await personalize(stale); ev('draft', `Rewrote the text for ${stale.name} with research`, stale.id); save(); return true;
@@ -317,7 +319,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
       // supply: keep a small buffer of drafts, top up leads with a daily search batch
       const drafted = Object.values(S.leads).filter((L) => L.status === 'drafted').length;
       const cap = effCap(), d = day();
-      const stale = Object.values(S.leads).some((L) => L.status === 'drafted' && !L.researched && !L.test);
+      const stale = Object.values(S.leads).some((L) => L.status === 'drafted' && !L.test && (!L.researched || (!L.why && (L.writes || 0) < 2)));
       if (stale || drafted < Math.min(5, cap - d.texts)) { if (await draftOne()) return; }
       if (deps.readyCount(new Set(Object.keys(S.leads)), new Set(S.optOut)) < 15 && d.searches < 60 && !deps.jobRunning() && room(60 * COST.search) && env.GOOGLE_PLACES_KEY) {
         if (deps.startFind(60)) { d.searches += 60; d.spend += 60 * COST.search; ev('search', 'Started a 60-search batch to find more leads'); save(); }
