@@ -40,7 +40,7 @@ function mockFetch(log) {
     const body = init.body ? JSON.parse(init.body) : {};
     log.push({ url, method: init.method, body });
     if (url.includes('anthropic')) {
-      if (body.system.includes('sample websites')) return J({ content: [{ type: 'text', text: '<!doctype html><html><body><h1>Joe</h1></body></html>' }] });
+      if (body.system.includes('sample websites')) return J({ content: [{ type: 'text', text: '<!doctype html><html><body><h1>[[NAME]]</h1><p>[[TOWN]] [[PHONE]]</p><a href="tel:[[PHONE_DIGITS]]">Call</a></body></html>' }] });
       if (body.system.includes('ONE first text')) { const link = body.messages[0].content.match(/Link: (\S+)/)[1]; return J({ content: [{ type: 'text', text: `Morning! This is Zac. Built a free sample site for Joe's Roofing: ${link} Reply STOP to opt out.` }] }); }
       return J({ content: [{ type: 'text', text: '{"intent":"price","reply":"Good question, let me grab the details and text you right back."}' }] });
     }
@@ -56,6 +56,7 @@ function setup(over = {}) {
   let queue = [{ place_id: 'ChIJ1', name: "Joe's Roofing", phone: '(508) 555-0101', trade: 'roofing contractor', town: 'Mashpee, MA', tier: 'A', web_type: 'none', reviews: '12', rating: '4.8' }];
   const env = { ANTHROPIC_API_KEY: 'k', GHL_TOKEN: 't', GHL_LOCATION_ID: 'L', GHL_PIPELINE_ID: 'P', GHL_STAGE_NEW_LEAD: 'S0', GHL_STAGE_TEXTED: 'S1', GHL_STAGE_RESPOND_YES: 'S2', GHL_STAGE_NOT_INTERESTED: 'S3', PUBLIC_URL: 'https://x.up.railway.app', ...over };
   const ap = createAutopilot({ env, dir, fetchImpl: mockFetch(log), now: () => SAT_3PM_ET, log: () => {}, deps: { nextProspect: () => queue.shift() || null, readyCount: () => 0, markState: (id, v) => (marks[id] = v), jobRunning: () => false, startFind: () => false } });
+  ap._deps = { queue };
   return { ap, log, marks, dir };
 }
 
@@ -70,7 +71,9 @@ test('auto mode drafts, stages in GHL, texts once, moves stage, tracks spend', a
   assert.equal(sms.length, 1); assert.equal(sms[0].body.contactId, 'c1'); assert.match(sms[0].body.message, /\/s\/joes-roofing-/);
   assert.ok(log.some((l) => l.method === 'PUT' && l.body.pipelineStageId === 'S1'));
   const v = ap.view(); assert.equal(v.today.texts, 1); assert.ok(v.today.spend > 0 && v.today.spend < 1); assert.equal(marks.ChIJ1, 'created');
-  assert.ok(fs.readdirSync(path.join(dir, 'sites')).length === 1);
+  assert.equal(fs.readdirSync(path.join(dir, 'sites')).filter((f) => f.endsWith('.html')).length, 1);
+  const page = fs.readFileSync(path.join(dir, 'sites', fs.readdirSync(path.join(dir, 'sites')).find((f) => f.endsWith('.html'))), 'utf8');
+  assert.match(page, /Joe&#39;s Roofing/); assert.match(page, /\(508\) 555-0101/); assert.match(page, /tel:5085550101/); assert.ok(!page.includes('[['));
   await ap.tick(); assert.equal(log.filter((l) => l.url.endsWith('/conversations/messages')).length, 1, 'paced: no second send immediately');
 });
 
@@ -80,7 +83,7 @@ test('draft mode never sends', async () => {
 });
 
 test('budget and cap are hard stops', async () => {
-  const a = setup(); a.ap.setSettings({ mode: 'auto', dailyBudget: 0.05 }); await a.ap.tick(); assert.equal(a.log.length, 0);
+  const a = setup(); a.ap.setSettings({ mode: 'auto', dailyBudget: 0.01 }); await a.ap.tick(); assert.equal(a.log.length, 0);
   const b = setup(); b.ap.setSettings({ mode: 'auto', dailyTextCap: 0 }); await b.ap.tick(); await b.ap.tick();
   assert.equal(b.log.filter((l) => l.url.endsWith('/conversations/messages')).length, 0);
 });
@@ -102,4 +105,12 @@ test('price question: flags Zac, moves to Respond Yes, queues one holding reply 
 
 test('unknown contacts (not ours) are ignored', async () => {
   const { ap } = setup(); assert.deepEqual(await ap.handleInbound({ contactId: 'nope', text: 'hi' }), { ignored: true });
+});
+
+test('one template per trade: a second lead of the same trade makes no new site call', async () => {
+  const { ap, log } = setup(); ap.setSettings({ mode: 'draft' });
+  const second = { place_id: 'ChIJ2', name: 'Cape Roof Co', phone: '(508) 555-0199', trade: 'roofing contractor', town: 'Falmouth, MA', tier: 'A', web_type: 'none' };
+  await ap.tick(); const before = log.filter((l) => l.body?.system?.includes('sample websites')).length;
+  ap._deps.queue.push(second); await ap.tick();
+  assert.equal(before, 1); assert.equal(log.filter((l) => l.body?.system?.includes('sample websites')).length, 1); assert.equal(ap.view().drafts.length, 2);
 });

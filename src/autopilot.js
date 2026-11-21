@@ -7,7 +7,7 @@ import { generateSite } from './sites.js';
 import { stageProspect, sendSms, moveOpportunity, addTags } from './ghl.js';
 
 // Estimated unit costs in USD (Zac's SMS rate; the rest are rough and only used for the budget guard).
-export const COST = { sms: 0.008, site: 0.12, msg: 0.01, triage: 0.005, search: 0.035 };
+export const COST = { sms: 0.008, site: 0.01, msg: 0.01, triage: 0.005, search: 0.035 }; // site = per-trade template, filled per lead
 export const DEFAULTS = { mode: 'off', dailyBudget: 5, dailyTextCap: 25, maxBotReplies: 2, offer: '' };
 const HOLIDAYS = new Set(['2026-11-26', '2026-12-25', '2027-01-01']);
 const DAY = 864e5;

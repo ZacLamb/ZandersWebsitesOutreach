@@ -20,17 +20,32 @@ export function withBanner(html, name) {
   return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, bar + '</body>') : html + bar;
 }
 
-export async function generateSite(env, p, dir, fetchImpl = fetch) {
-  const facts = [`Business name: ${p.name}`, `Trade: ${p.trade}`, `Location: ${p.town}`, p.address && `Address: ${p.address}`, p.phone && `Phone: ${p.phone}`,
-    p.rating && p.reviews && `Google rating: ${p.rating} from ${p.reviews} reviews`].filter(Boolean).join('\n');
+// One Claude-written template per TRADE (cached on disk), personalized per lead by plain text substitution.
+// Cost is ~zero per lead. The deeper custom build (town pages, services, logo) only happens once they show interest.
+const TOKENS = ['[[NAME]]', '[[TOWN]]', '[[PHONE]]', '[[PHONE_DIGITS]]'];
+async function getTemplate(env, trade, dir, fetchImpl) {
+  const f = path.join(dir, 'sites', 'templates', `${slugify(trade)}.html`);
+  if (fs.existsSync(f)) return fs.readFileSync(f, 'utf8');
   const out = await askClaude(env, {
-    system: 'You build one-page marketing sample websites for small local trade businesses. Output ONE complete HTML document (doctype to </html>) with inline CSS only. No JavaScript, no forms, no external scripts. Mobile-first, clean, modern, fast. Sections: hero with a call button (tel: link), services typical for the trade, service area, why choose us, contact. STRICT: use only the facts given. Do not invent years in business, licenses, awards, owner names, testimonials, prices, or guarantees. Generic trade services are fine. No stock-photo URLs; use CSS shapes/gradients. Return only the HTML.',
-    user: facts, maxTokens: 6000,
+    system: `You build one-page marketing sample websites for small local trade businesses. Output ONE complete HTML document (doctype to </html>) with inline CSS only. No JavaScript, no forms, no external scripts. Mobile-first, clean, modern, fast. This is a reusable TEMPLATE for the trade "${trade}": use these exact placeholders wherever the business details go: [[NAME]] (business name), [[TOWN]] (town and state), [[PHONE]] (display phone), [[PHONE_DIGITS]] (digits only, for tel: links). Sections: hero with a call button (href="tel:[[PHONE_DIGITS]]"), typical services for this trade, service area mentioning [[TOWN]], why choose us, contact with [[PHONE]]. STRICT: do not invent years in business, licenses, awards, owner names, testimonials, prices, ratings or guarantees. No stock-photo URLs; use CSS shapes/gradients. Return only the HTML.`,
+    user: `Trade: ${trade}`, maxTokens: 6000,
   }, fetchImpl);
   const m = out.match(/<!doctype html[\s\S]*<\/html>/i) || out.match(/<html[\s\S]*<\/html>/i);
-  if (!m) throw new Error('site generation returned no HTML');
+  if (!m || !m[0].includes('[[NAME]]')) throw new Error('template generation returned no usable HTML');
+  const html = sanitize(m[0]);
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, html);
+  return html;
+}
+
+export async function generateSite(env, p, dir, fetchImpl = fetch) {
+  const tpl = await getTemplate(env, p.trade, dir, fetchImpl);
+  const digits = String(p.phone || '').replace(/\D/g, '').slice(-10);
+  const pretty = digits.length === 10 ? `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}` : String(p.phone || '');
+  const vals = { '[[NAME]]': esc(p.name), '[[TOWN]]': esc(p.town), '[[PHONE]]': esc(pretty), '[[PHONE_DIGITS]]': digits };
+  let html = tpl; for (const t of TOKENS) html = html.split(t).join(vals[t]);
   const slug = newSlug(p.name);
   fs.mkdirSync(path.join(dir, 'sites'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'sites', `${slug}.html`), withBanner(sanitize(m[0]), p.name));
+  fs.writeFileSync(path.join(dir, 'sites', `${slug}.html`), withBanner(html, p.name));
   return slug;
 }
