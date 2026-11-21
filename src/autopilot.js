@@ -31,7 +31,8 @@ const hook = (p) => ({ none: "doesn't have a website on its Google listing", 'so
 export function templateMessage(p, url, step) {
   if (step === 1) return ascii(`Hey, just checking you saw the sample site I built for ${p.name}? ${url} Happy to tweak it, no pressure.`);
   if (step === 2) return ascii(`Last note from me, the sample for ${p.name} stays up this week: ${url} Thanks either way! Reply STOP to opt out.`);
-  return ascii(`Morning! This is Zac. Saw ${p.name} ${hook(p)}${+p.reviews > 5 ? ` (${p.reviews} reviews, nice work)` : ''} so I built you a sample site: ${url} No monthly contracts, just a site that works. Let me know what you think. Reply STOP to opt out.`);
+  // Short wins: in Zac's history, texts under ~140 chars got ~35% replies vs ~9% over 300 chars (confounded, but consistent).
+  return ascii(`Hey, Zac here. Built a free sample site for ${p.name}: ${url} Worth a look? Reply STOP to opt out.`);
 }
 
 const VOICE = `Zac's style (from texts that got replies): casual, local, friendly, short. Examples:
@@ -62,11 +63,11 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
     if (!env.ANTHROPIC_API_KEY) return templateMessage(p, url, 0);
     try {
       const t = await askClaude(env, {
-        system: `${VOICE}\nWrite ONE first text from Zac to the owner of a local trade business. Rules: max 300 characters, plain ASCII, no emoji, mention one true specific detail from the facts, include the link exactly as given, say it is a free sample he built, no price, no hype, no invented facts, do not claim to know the owner's name. Start with "Morning!", "Hey!" or similar. Include "this is Zac". End with "Reply STOP to opt out." Return only the text.`,
+        system: `${VOICE}\nWrite ONE first text from Zac to the owner of a local trade business. Rules: SHORT, under 150 characters not counting the link (short texts get 3-4x the replies), plain ASCII, no emoji, at most one true specific detail from the facts, include the link exactly as given, say it is a free sample he built, no price, no hype, no invented facts, do not claim to know the owner's name. Start with "Hey" or "Morning". Include "Zac". End with "Reply STOP to opt out." Return only the text.`,
         user: `Business: ${p.name}\nTrade: ${p.trade}\nTown: ${p.town}\nWebsite situation: ${hook(p)}\nGoogle reviews: ${p.reviews || 'unknown'} (rating ${p.rating || 'unknown'})\nLink: ${url}`, maxTokens: 300,
       }, fetchImpl);
       const m = ascii(t);
-      return m.includes(url) && /stop/i.test(m) && m.length <= 360 ? m : templateMessage(p, url, 0);
+      return m.includes(url) && /stop/i.test(m) && m.length <= 260 ? m : templateMessage(p, url, 0);
     } catch (e) { ev('warn', `message draft fell back to template: ${e.message}`); return templateMessage(p, url, 0); }
   }
 

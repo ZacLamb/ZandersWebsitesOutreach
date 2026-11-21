@@ -24,7 +24,7 @@ test('opt-out detection', () => {
 
 test('template message is ASCII, has link + STOP, one segment-ish', () => {
   const m = templateMessage({ name: "Joe's Roofing", web_type: 'none', reviews: '12' }, 'https://x.up.railway.app/s/joes-abc123', 0);
-  assert.match(m, /this is Zac/i); assert.match(m, /STOP/); assert.ok(m.includes('https://x.up.railway.app/s/joes-abc123'));
+  assert.match(m, /Zac here/i); assert.ok(m.length < 160); assert.match(m, /STOP/); assert.ok(m.includes('https://x.up.railway.app/s/joes-abc123'));
   assert.ok(/^[\x20-\x7E]+$/.test(m)); assert.ok(segments(m) <= 3);
 });
 
