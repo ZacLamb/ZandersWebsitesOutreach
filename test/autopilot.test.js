@@ -289,3 +289,35 @@ test('dashboard: reply from RGS number stops the bot, stage move syncs, Stripe l
   assert.equal(m.byAngle[0].key, 'No website');
   await assert.rejects(() => ap.payLink('ChIJ5', 'monthly_seo_x'), /Unknown plan/);
 });
+
+test('ready to buy: bot sends the right payment link itself, flags Zac, never twice; not once Zac has taken over', async () => {
+  const clock = SAT_3PM_ET.getTime();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap5-')); const log = [];
+  const base = mockFetch(log);
+  const fetchImpl = async (url, init = {}) => {
+    if (url.includes('anthropic')) { const b = JSON.parse(init.body); const m = b.messages[0].content.match(/Their reply: (.*)$/);
+      if (m) { const t = m[1]; const intent = /year up front/.test(t) ? 'ready_to_buy' : /^yes/.test(t) ? 'interested' : 'question';
+        return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: JSON.stringify({ intent, plan: /year/.test(t) ? 'annual' : 'monthly', reply: intent === 'ready_to_buy' ? '' : 'Sure thing!' }) }] }) }; } }
+    if (url.startsWith('https://api.stripe.com')) {
+      log.push({ url, method: init.method, body: init.body || '' });
+      if (url.includes('/prices?')) return { ok: true, json: async () => ({ data: [{ id: 'price_x' }] }) };
+      if (url.endsWith('/payment_links')) return { ok: true, json: async () => ({ id: 'plink_9', url: 'https://buy.stripe.com/annual_9' }) };
+    }
+    return base(url, init);
+  };
+  const queue = [{ place_id: 'ChIJ8', name: 'Cape Tile', phone: '(508) 555-0122', trade: 'tile', town: 'Dennis, MA', tier: 'A', web_type: 'none' }];
+  const env = { ANTHROPIC_API_KEY: 'k', GHL_TOKEN: 't', GHL_LOCATION_ID: 'L', GHL_PIPELINE_ID: 'RGSP', GHL_STAGE_NEW_LEAD: 'R0', GHL_STAGE_TEXTED: 'R1', GHL_STAGE_RESPOND: 'R2', GHL_STAGE_RESPOND_YES: 'R3',
+    GHL_FROM_NUMBER_RGS: '+1RGS', PUBLIC_URL: 'https://x.app', STRIPE_KEY_RGS: 'rk_live_x', ALERT_CONTACT_ID: 'zac' };
+  const ap = createAutopilot({ env, dir, fetchImpl, now: () => new Date(clock), log: () => {}, deps: { nextProspect: () => queue.shift() || null, readyCount: () => 0, markState() {}, jobRunning: () => false, startFind: () => false } });
+  ap.setSettings({ mode: 'auto' }); await ap.tick(); await ap.tick();
+  await ap.handleInbound({ contactId: 'c1', text: 'yes send it' }); // sample link goes out first
+  ap._state().pending = [];
+  const r = await ap.handleInbound({ contactId: 'c1', text: "love it, I'll do the year up front" });
+  assert.equal(r.intent, 'ready_to_buy');
+  const pend = ap._state().pending; assert.equal(pend.length, 1); assert.match(pend[0].text, /buy\.stripe\.com\/annual_9/);
+  assert.ok(decodeURIComponent(log.find((l) => l.url.endsWith('/payment_links')).body).includes('metadata[plan]=annual'));
+  assert.ok(log.some((l) => l.body?.contactId === 'zac' && /payment link/.test(l.body.message)));
+  assert.equal(log.filter((l) => l.method === 'PUT').at(-1).body.pipelineStageId, 'R3');
+  await ap.handleInbound({ contactId: 'c1', text: "year up front please" });
+  assert.equal(log.filter((l) => l.url.endsWith('/payment_links')).length, 1, 'no duplicate link');
+});

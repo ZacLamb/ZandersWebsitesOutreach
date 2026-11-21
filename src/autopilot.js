@@ -251,12 +251,12 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     if (!env.ANTHROPIC_API_KEY) return { intent: 'other', reply: '' };
     try {
       const out = await askClaude(env, {
-        system: `You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websites (Zander, age 7, with his dad Zac helping)" : 'Zac from Revenue Generating Solutions'}, who offered a local trade business a free sample website. Return ONLY JSON: {"intent": one of "interested","price","question","objection","not_interested","wrong_person","asks_if_bot","other","reply": string}. "reply" is a short friendly plain-ASCII text from Zac (max 220 chars, no emoji) or "" if no reply should be sent. Rules: never state any price or timeline unless it appears in OFFER below; if price is asked and OFFER is empty, reply that you'll grab the details and text right back; never promise anything not in OFFER; if they ask whether this is a bot/automated/AI, intent "asks_if_bot" and reply ""; if not_interested/wrong_person, reply "" ; keep the sender's casual local voice; never mention the other brand.\nOFFER: ${(L.brand === 'zw' ? S.settings.offerZw : S.settings.offer) || '(none)'}`,
+        system: `You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websites (Zander, age 7, with his dad Zac helping)" : 'Zac from Revenue Generating Solutions'}, who offered a local trade business a free sample website. Return ONLY JSON: {"intent": one of "ready_to_buy","interested","price","question","objection","not_interested","wrong_person","asks_if_bot","other","plan": one of "monthly","annual","monthly_seo","reply": string}. Use "ready_to_buy" ONLY when they clearly say they want to go ahead and pay or sign up (e.g. "let's do it", "how do I sign up", "send me the link to pay", "I'll take it"); a yes to seeing the sample, a maybe, or a question is NOT ready_to_buy. "plan": "annual" only if they chose paying the year up front, "monthly_seo" only if they asked for the SEO add-on, otherwise "monthly". For ready_to_buy set "reply" to "". "reply" is a short friendly plain-ASCII text from Zac (max 220 chars, no emoji) or "" if no reply should be sent. Rules: never state any price or timeline unless it appears in OFFER below; if price is asked and OFFER is empty, reply that you'll grab the details and text right back; never promise anything not in OFFER; if they ask whether this is a bot/automated/AI, intent "asks_if_bot" and reply ""; if not_interested/wrong_person, reply "" ; keep the sender's casual local voice; never mention the other brand.\nOFFER: ${(L.brand === 'zw' ? S.settings.offerZw : S.settings.offer) || '(none)'}`,
         user: `Business: ${L.name}\nOur text: ${L.msg}\n${L.linkSent ? 'We already sent them the sample link.' : 'We have not sent the link yet; a separate message with the link is sent automatically, so your reply must NOT include a link.'}\nTheir reply: ${text}`, maxTokens: 1000,
       }, fetchImpl);
       day().spend += COST.triage;
       const j = JSON.parse(out.match(/\{[\s\S]*\}/)[0]);
-      return { intent: String(j.intent || 'other'), reply: ascii(j.reply || '').slice(0, 300) };
+      return { intent: String(j.intent || 'other'), plan: String(j.plan || 'monthly'), reply: ascii(j.reply || '').slice(0, 300) };
     } catch (e) { ev('warn', `triage failed: ${e.message}`, L.id); return { intent: 'other', reply: '' }; }
   }
 
@@ -294,10 +294,29 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
       ev('reply', `${L.name}: "${body.slice(0, 80)}" -> sending the sample link`, L.id);
       save(); return { intent: c.intent, link: true };
     }
+    // They said yes to buying: the bot sends the right payment link itself (unless Zac already took over).
+    if (c.intent === 'ready_to_buy' && L.linkSent) {
+      const brand = brandOf(L); const plan = PLANS[brand][c.plan] ? c.plan : 'monthly';
+      L.zwDueAt = null; L.inZwQueue = false; L.needsYou = true; (L.hot ||= {})[brand] = true; L.status = 'hot';
+      await move(L, 'RESPOND_YES');
+      const already = (L.payLinks || []).find((k) => k.brand === brand && k.plan === plan);
+      if (!L.manual && stripeKey(env, brand) && !already) {
+        try {
+          const link = await createPaymentLink(env, brand, plan, L, fetchImpl);
+          (L.payLinks ||= []).push({ ...link, plan, brand, at: now().toISOString(), byBot: true });
+          const text = brand === 'zw' ? `Yay!! Here's the link to sign up: ${link.url} Thank you so much!` : `Awesome! Here's the link to get set up: ${link.url} Once that goes through I'll get your site live and text you.`;
+          S.pending.push({ id: L.id, at: now().getTime() + 45e3 + Math.random() * 45e3, text: ascii(text) });
+          ev('reply', `${L.name} wants to buy -> sending the ${PLANS[brand][plan].label} payment link`, L.id);
+          await alertZac(`ZW: ${L.name} said "${body.slice(0, 80)}". Bot sent the ${PLANS[brand][plan].label} payment link.`);
+        } catch (e) { ev('error', `Could not make payment link for ${L.name}: ${e.message}`, L.id); await alertZac(`ZW lead READY TO BUY: ${L.name} said "${body.slice(0, 100)}" (payment link failed, send it from the Inbox)`); }
+      } else await alertZac(`ZW lead READY TO BUY: ${L.name} said "${body.slice(0, 100)}"`);
+      try { await addTags(env, contactId, ['zw-hot'], fetchImpl); } catch {}
+      save(); return { intent: c.intent, payLink: true };
+    }
     const rgs = L.brand !== 'zw';
     if (rgs && c.intent === 'objection' && !L.zwSentAt) L.zwDueAt = now().getTime() + S.settings.zwDelayDays * DAY; // Zac gets a shot first; Zander follows if it goes nowhere
-    if (['interested', 'price'].includes(c.intent)) { L.zwDueAt = null; L.inZwQueue = false; }
-    const hot = ['interested', 'price', 'objection', 'asks_if_bot', 'other', 'question'].includes(c.intent);
+    if (['interested', 'price', 'ready_to_buy'].includes(c.intent)) { L.zwDueAt = null; L.inZwQueue = false; }
+    const hot = ['ready_to_buy', 'interested', 'price', 'objection', 'asks_if_bot', 'other', 'question'].includes(c.intent);
     if (c.intent === 'not_interested') {
       L.status = 'closed';
       if (rgs && !L.zwSentAt) { await toZander(L); ev('info', `${L.name} said no to RGS; moved to Zander's Websites`, L.id); }
