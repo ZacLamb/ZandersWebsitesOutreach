@@ -3,11 +3,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { askClaude } from './claude.js';
+import { research, brief } from './research.js';
 import { generateSite } from './sites.js';
 import { stageProspect, sendSms, moveOpportunity, addTags, removeTags } from './ghl.js';
 
 // Estimated unit costs in USD (Zac's SMS rate; the rest are rough and only used for the budget guard).
-export const COST = { sms: 0.008, site: 0.01, msg: 0.01, triage: 0.005, search: 0.035 }; // site = per-trade template, filled per lead
+export const COST = { sms: 0.008, site: 0.01, msg: 0.03, research: 0.03, triage: 0.005, search: 0.035 }; // site = per-trade template, filled per lead
 export const DEFAULTS = {
   mode: 'off', dailyBudget: 5, dailyTextCap: 25, maxBotReplies: 2, zwDelayDays: 7,
   offer: 'Revenue Generating Solutions: website build $497 one time, then $99/mo for hosting, changes and Google Business Profile setup. No contract. If they want the $497 build fee waived: pay the year up front ($1,188 for 12 months at $99) and the build is free. Optional local SEO (town and service pages added monthly) is +$199/mo.',
@@ -71,30 +72,73 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
   const ghlReady = () => !!(env.GHL_TOKEN && env.GHL_LOCATION_ID && env.GHL_PIPELINE_ID && env.GHL_STAGE_NEW_LEAD);
   const publicUrl = () => env.PUBLIC_URL || (env.RAILWAY_PUBLIC_DOMAIN ? `https://${env.RAILWAY_PUBLIC_DOMAIN}` : '');
 
-  async function writeMessage(p, url) {
-    if (!env.ANTHROPIC_API_KEY) return templateMessage(p, url, 0);
+  const WRITER = () => env.ANTHROPIC_MODEL_WRITER || 'claude-opus-5-5';
+  const okText = (m, max = 320) => m && !/https?:|www\.|\.com|\/s\//i.test(m) && /\?/.test(m) && m.length <= max;
+
+  // Research the lead (Google reviews + their current site), then write a first text that could only be for them.
+  async function writeMessage(p, url, facts) {
+    if (!env.ANTHROPIC_API_KEY) return { text: templateMessage(p, url, 0), why: '' };
     try {
       const t = await askClaude(env, {
-        system: `${VOICE}\nWrite ONE first text from Zac to the owner of a local trade business. Rules: SHORT, under 140 characters (short texts get 3-4x the replies), plain ASCII, no emoji, NO link and no URL, say he built them a free sample site and ASK if they want him to send it, at most one true specific detail from the facts, no price, no hype, no invented facts, do not claim to know the owner's name. Start with "Hey" or "Morning". Include "Zac". Return only the text.`,
-        user: `Business: ${p.name}\nTrade: ${p.trade}\nTown: ${p.town}\nWebsite situation: ${hook(p)}\nGoogle reviews: ${p.reviews || 'unknown'} (rating ${p.rating || 'unknown'})`, maxTokens: 300,
+        model: WRITER(),
+        system: `${VOICE}
+
+You write ONE first cold text from Zac to the owner of a local trade business. The goal is a reply. It must read like Zac personally looked at THIS business, because he did: you have their Google reviews and a look at their current website.
+
+How to personalize (pick the 1-2 strongest, true, specific things):
+- Something customers keep praising in the reviews (a specific kind of job, a town, being on time, cleanup, fair price). Paraphrase, never quote a review word for word, never name or describe a reviewer.
+- A concrete problem with their web presence: no website, only Facebook, site does not load, not secure, broken on phones, footer stuck on an old year, thin site that does not show their work.
+- Their standing: lots of reviews or a high rating with no site to match it is a strong angle.
+- Owner first name: ONLY if two or more reviews name the same first name and it is clearly the owner/the guy running it (or the business is named after him). Otherwise no name. Never guess.
+
+Rules: 160-260 characters, plain ASCII, no emoji, NO link and no URL (the sample link is sent only after they say yes), say he built them a free sample site, end by ASKING if they want him to send it over. No price. No hype words (amazing, incredible, game changer). Never invent or exaggerate a fact that is not in the research. Sound like a local guy texting, not a marketer. Include "Zac". Do not mention Google reviews robotically ("I saw your 4.8 rating") unless it is the best angle; specifics beat numbers.
+
+Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 words max"}`,
+        user: brief(p, facts), maxTokens: 400,
+      }, fetchImpl);
+      const j = JSON.parse(t.match(/\{[\s\S]*\}/)[0]);
+      const m = ascii(j.text || '');
+      if (okText(m)) return { text: m, why: ascii(j.why || '').slice(0, 120) };
+      ev('warn', `personalized text for ${p.name} failed checks, using template`, p.place_id || p.id);
+    } catch (e) { ev('warn', `message draft fell back to template: ${e.message}`); }
+    return { text: templateMessage(p, url, 0), why: '' };
+  }
+
+  async function zanderWrite(L) {
+    const base = zanderMessage(L);
+    if (!env.ANTHROPIC_API_KEY || !L.facts) return base;
+    try {
+      const t = await askClaude(env, {
+        model: WRITER(),
+        system: `Write ONE text from Zander, a 7 year old whose first business is building websites (his dad Zac helps), to a local trade business. Kid voice: simple words, excited, honest, short sentences, a little cute but not babyish. Must include: he is 7, he made them a free website, it is $20 a month with no setup fee, and end by ASKING if he can send it to them. Add ONE true specific thing about this business from the research, phrased the way a kid would (e.g. "people say you always clean up really good"). Never quote a review word for word, never name a reviewer, invent nothing. 160-280 characters, plain ASCII, no emoji, NO link or URL. Never mention Revenue Generating Solutions or any earlier text. Return only the text.`,
+        user: brief(L, L.facts), maxTokens: 300,
       }, fetchImpl);
       const m = ascii(t);
-      return !/https?:|www\.|\.com|\/s\//i.test(m) && /\?/.test(m) && m.length <= 200 ? m : templateMessage(p, url, 0);
-    } catch (e) { ev('warn', `message draft fell back to template: ${e.message}`); return templateMessage(p, url, 0); }
+      day().spend += COST.msg;
+      return okText(m, 320) && /7|seven/i.test(m) && /\$?20/.test(m) ? m : base;
+    } catch { return base; }
+  }
+
+  // Research + write for a lead object; stores facts so the Zander touch can reuse them.
+  async function personalize(L) {
+    if (!L.facts) { try { L.facts = await research(env, L, fetchImpl); } catch { L.facts = {}; } day().spend += COST.research; }
+    const r = await writeMessage(L, L.url, L.facts);
+    day().spend += COST.msg;
+    L.msg = r.text; L.why = r.why; L.researched = true;
   }
 
   async function draftOne() {
     load();
     if (!env.ANTHROPIC_API_KEY || !publicUrl()) return false;
-    if (!room(COST.site + COST.msg)) return false;
+    if (!room(COST.site + COST.msg + COST.research)) return false;
     const p = deps.nextProspect(new Set(Object.keys(S.leads)), new Set(S.optOut));
     if (!p) return false;
-    const L = (S.leads[p.place_id] = { id: p.place_id, name: p.name, phone: digits(p.phone), trade: p.trade, town: p.town, tier: p.tier, status: 'drafting', step: 0, replies: [], botReplies: 0, created: now().toISOString() });
+    const L = (S.leads[p.place_id] = { id: p.place_id, place_id: p.place_id, name: p.name, phone: digits(p.phone), trade: p.trade, town: p.town, tier: p.tier, website: p.website || '', web_type: p.web_type || '', rating: p.rating, reviews: p.reviews, status: 'drafting', step: 0, replies: [], botReplies: 0, created: now().toISOString() });
     try {
       const slug = await generateSite(env, p, dir, fetchImpl);
       L.slug = slug; L.url = `${publicUrl()}/s/${slug}`;
-      L.msg = await writeMessage(p, L.url); L.status = 'drafted';
-      const d = day(); d.spend += COST.site + COST.msg; d.drafts++;
+      await personalize(L); L.status = 'drafted';
+      const d = day(); d.spend += COST.site; d.drafts++;
       ev('draft', `Drafted sample + text for ${p.name}`, p.place_id);
     } catch (e) { L.status = 'failed'; L.error = e.message; ev('error', `Draft failed for ${p.name}: ${e.message}`, p.place_id); }
     save(); return true;
@@ -118,11 +162,10 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
     if (!L && env.GHL_FROM_NUMBER_ZW) {
       const z = Object.values(S.leads).find((x) => x.zwDueAt && x.zwDueAt <= t && !x.zwSentAt && x.status !== 'opted_out' && x.contactId);
       if (z) {
-        const zmsg = zanderMessage(z);
-        if (!room(segments(zmsg) * COST.sms)) return false;
+        if (!room(2 * COST.sms + COST.msg)) return false;
         try {
           if (!z.zwUrl) { const slug = await generateSite(env, { name: z.name, phone: z.phone, trade: z.trade, town: z.town }, dir, fetchImpl, 'zw'); z.zwUrl = `${publicUrl()}/s/${slug}`; }
-          const m2 = zanderMessage(z);
+          const m2 = await zanderWrite(z);
           await sendSms(env, z.contactId, m2, fetchImpl, env.GHL_FROM_NUMBER_ZW);
           d.texts++; d.spend += segments(m2) * COST.sms; z.zwSentAt = t; z.brand = 'zw'; z.status = 'zw_sent'; z.botReplies = 0; z.msg = m2; z.linkSent = false; z.url = z.zwUrl;
           try { await addTags(env, z.contactId, ['zw-zander-pitch'], fetchImpl); } catch {}
@@ -134,6 +177,8 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
     }
     if (!L) { L = Object.values(S.leads).find((x) => x.status === 'drafted'); step = 0; }
     if (!L) return false;
+    // drafts made before personalization get researched + rewritten before they go out
+    if (step === 0 && !L.researched) { if (!room(COST.msg + COST.research + 2 * COST.sms)) return false; await personalize(L); save(); }
     const msg = step === 0 ? L.msg : templateMessage({ name: L.name }, L.url, step);
     if (!room(segments(msg) * COST.sms)) return false;
     if (S.optOut.includes(L.phone)) { L.status = 'opted_out'; save(); return true; }
@@ -259,7 +304,7 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
     const slug = await generateSite(env, p, dir, fetchImpl, brand);
     const url = `${publicUrl()}/s/${slug}`;
     const L = (S.leads[p.place_id] = { id: p.place_id, test: true, name: p.name, phone: p.phone, trade: p.trade, town: p.town, tier: 'A', brand, slug, url, status: 'sent', step: 1, replies: [], botReplies: 0, contactId: env.ALERT_CONTACT_ID, created: now().toISOString(), lastSentAt: now().getTime() });
-    L.msg = brand === 'zw' ? zanderMessage(p) : await writeMessage(p, url);
+    L.msg = brand === 'zw' ? zanderMessage(p) : (await writeMessage(p, url, null)).text;
     await addTags(env, L.contactId, ['zw-autopilot'], fetchImpl);
     await sendSms(env, L.contactId, L.msg, fetchImpl, from);
     S.byContact[L.contactId] = L.id;
@@ -295,7 +340,7 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
     return {
       locationId: env.GHL_LOCATION_ID || '', settings: S.settings, paused: S.paused, today: d, effCap: effCap(), week: week.map(([date, v]) => ({ date, ...v })),
       needsYou: leads.filter((L) => L.needsYou).map((L) => ({ id: L.id, name: L.name, phone: L.phone, contactId: L.contactId, last: L.replies.filter((r) => !r.bot).slice(-1)[0]?.text || '', intent: L.lastIntent })),
-      drafts: leads.filter((L) => L.status === 'drafted').slice(0, 8).map((L) => ({ id: L.id, name: L.name, msg: L.msg, url: L.url })),
+      drafts: leads.filter((L) => L.status === 'drafted').slice(0, 8).map((L) => ({ id: L.id, name: L.name, msg: L.msg, url: L.url, why: L.why || '' })),
       testActive: leads.some((L) => L.test), testLead: (leads.find((L) => L.test) || null) && (({ msg, url, replies, lastIntent, brand }) => ({ msg, url, replies, lastIntent, brand }))(leads.find((L) => L.test)), zwScheduled: leads.filter((L) => L.zwDueAt && !L.zwSentAt).length, counts: leads.reduce((a, L) => ((a[L.status] = (a[L.status] || 0) + 1), a), {}), events: S.events.slice(0, 40),
       setup: { claude: !!env.ANTHROPIC_API_KEY, ghl: ghlReady(), publicUrl: !!publicUrl(), stages: !!(stage('TEXTED') && stage('RESPOND_YES')), webhook: !!env.GHL_WEBHOOK_SECRET, alerts: !!env.ALERT_CONTACT_ID, numberRgs: !!(env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER), numberZw: !!env.GHL_FROM_NUMBER_ZW, inWindow: canSendNow(now()) },
     };

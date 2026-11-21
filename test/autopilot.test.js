@@ -41,10 +41,13 @@ function mockFetch(log) {
     log.push({ url, method: init.method, body });
     if (url.includes('anthropic')) {
       if (body.system.includes('sample websites')) return J({ content: [{ type: 'text', text: '<!doctype html><html><body><h1>[[NAME]]</h1><p>[[TOWN]] [[PHONE]]</p><a href="tel:[[PHONE_DIGITS]]">Call</a></body></html>' }] });
-      if (body.system.includes('ONE first text')) return J({ content: [{ type: 'text', text: `Morning! This is Zac. Built a free sample site for Joe's Roofing, want me to send it over?` }] });
+      if (body.system.includes('ONE first cold text')) return J({ content: [{ type: 'text', text: JSON.stringify({ text: "Hey Mike, Zac here. Folks keep saying you leave every job spotless, but there's no site to show it off, so I built Joe's Roofing a free sample one. Want me to send it over?", why: 'clean-up praise, no website' }) }] });
+      if (body.system.includes('Zander, a 7 year old')) return J({ content: [{ type: 'text', text: "Hi! I'm Zander and I'm 7. People say you clean up really good! I made Joe's Roofing a free website. It's $20 a month and no setup fee. Can I send it to you?" }] });
       if (/Their reply: sure/.test(body.messages[0].content)) return J({ content: [{ type: 'text', text: '{"intent":"interested","reply":""}' }] });
       return J({ content: [{ type: 'text', text: '{"intent":"price","reply":"Good question, let me grab the details and text you right back."}' }] });
     }
+    if (url.includes('places.googleapis.com/v1/places/')) return J({ rating: 4.9, userRatingCount: 31, photos: [{}, {}], reviews: [{ rating: 5, relativePublishTimeDescription: 'a month ago', text: { text: 'Mike and his crew left the yard spotless after our roof in Mashpee.' } }, { rating: 5, text: { text: 'Mike was on time and fair.' } }] });
+    if (url.startsWith('https://oldsite.example')) return { ok: true, status: 200, url, text: async () => '<html><head><title>Joes</title></head><body>Copyright 2014 Joe</body></html>' };
     if (url.includes('/contacts/search/duplicate')) return J({ message: 'none' }, 404);
     if (url.includes('/contacts/upsert')) return J({ contact: { id: 'c1' } });
     if (url.endsWith('/opportunities/')) return J({ opportunity: { id: 'o1' } });
@@ -55,7 +58,7 @@ function mockFetch(log) {
 function setup(over = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap-')); const log = []; const marks = {};
   let queue = [{ place_id: 'ChIJ1', name: "Joe's Roofing", phone: '(508) 555-0101', trade: 'pest control', town: 'Mashpee, MA', tier: 'A', web_type: 'none', reviews: '12', rating: '4.8' }];
-  const env = { ANTHROPIC_API_KEY: 'k', GHL_TOKEN: 't', GHL_LOCATION_ID: 'L', GHL_PIPELINE_ID: 'P', GHL_STAGE_NEW_LEAD: 'S0', GHL_STAGE_TEXTED: 'S1', GHL_STAGE_RESPOND_YES: 'S2', GHL_STAGE_NOT_INTERESTED: 'S3', GHL_FROM_NUMBER_RGS: '+15085550001', GHL_FROM_NUMBER_ZW: '+15085550002', PUBLIC_URL: 'https://x.up.railway.app', ...over };
+  const env = { ANTHROPIC_API_KEY: 'k', GOOGLE_PLACES_KEY: 'g', GHL_TOKEN: 't', GHL_LOCATION_ID: 'L', GHL_PIPELINE_ID: 'P', GHL_STAGE_NEW_LEAD: 'S0', GHL_STAGE_TEXTED: 'S1', GHL_STAGE_RESPOND_YES: 'S2', GHL_STAGE_NOT_INTERESTED: 'S3', GHL_FROM_NUMBER_RGS: '+15085550001', GHL_FROM_NUMBER_ZW: '+15085550002', PUBLIC_URL: 'https://x.up.railway.app', ...over };
   const ap = createAutopilot({ env, dir, fetchImpl: mockFetch(log), now: () => SAT_3PM_ET, log: () => {}, deps: { nextProspect: () => queue.shift() || null, readyCount: () => 0, markState: (id, v) => (marks[id] = v), jobRunning: () => false, startFind: () => false } });
   ap._deps = { queue };
   return { ap, log, marks, dir };
@@ -121,7 +124,7 @@ test('two brands, two numbers: RGS first, Zander a week after a no, never after 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap2-')); const log = [];
   const fetchImpl = mockFetch(log);
   const queue = [{ place_id: 'ChIJ9', name: 'Bay Plumbing', phone: '(508) 555-0177', trade: 'pest control', town: 'Bourne, MA', tier: 'A', web_type: 'none' }];
-  const env = { ANTHROPIC_API_KEY: 'k', GHL_TOKEN: 't', GHL_LOCATION_ID: 'L', GHL_PIPELINE_ID: 'P', GHL_STAGE_NEW_LEAD: 'S0', GHL_FROM_NUMBER_RGS: '+1RGS', GHL_FROM_NUMBER_ZW: '+1ZW', PUBLIC_URL: 'https://x.app' };
+  const env = { ANTHROPIC_API_KEY: 'k', GOOGLE_PLACES_KEY: 'g', GHL_TOKEN: 't', GHL_LOCATION_ID: 'L', GHL_PIPELINE_ID: 'P', GHL_STAGE_NEW_LEAD: 'S0', GHL_FROM_NUMBER_RGS: '+1RGS', GHL_FROM_NUMBER_ZW: '+1ZW', PUBLIC_URL: 'https://x.app' };
   const ap = createAutopilot({ env, dir, fetchImpl, now: () => new Date(clock), deps: { nextProspect: () => queue.shift() || null, readyCount: () => 0, markState() {}, jobRunning: () => false, startFind: () => false } });
   ap.setSettings({ mode: 'auto' }); await ap.tick(); await ap.tick();
   const sms = () => log.filter((l) => l.url.endsWith('/conversations/messages'));
@@ -195,4 +198,21 @@ test('ask-first: a yes gets the sample link from the same number, no hot alert; 
   const link = msgs.at(-1); assert.match(link.body.message, /\/s\/joes-roofing-/); assert.equal(link.body.fromNumber, '+15085550001');
   await ap.handleInbound({ contactId: 'c1', text: 'nice, how much?' });
   assert.equal(ap.view().needsYou.length, 1);
+});
+
+test('personalized first text: researches reviews + their site, writes with the writer model, shows why', async () => {
+  const { ap, log } = setup(); ap._deps.queue[0].website = 'https://oldsite.example'; ap._deps.queue[0].web_type = 'site';
+  ap.setSettings({ mode: 'draft' }); await ap.tick();
+  assert.ok(log.some((l) => l.url.includes('places.googleapis.com/v1/places/ChIJ1')));
+  assert.ok(log.some((l) => l.url === 'https://oldsite.example'));
+  const w = log.find((l) => l.url.includes('anthropic') && l.body.system.includes('ONE first cold text'));
+  assert.equal(w.body.model, 'claude-opus-5-5');
+  const u = w.body.messages[0].content;
+  assert.match(u, /spotless/); assert.match(u, /NO mobile layout/); assert.match(u, /copyright 2014/);
+  const d = ap.view().drafts[0]; assert.match(d.msg, /spotless/); assert.ok(!/http/.test(d.msg)); assert.match(d.msg, /\?$/); assert.equal(d.why, 'clean-up praise, no website');
+});
+
+test('a bad model text (has a link) falls back to the safe template', async () => {
+  const { ap } = setup(); const L = { name: "Joe's Roofing" };
+  assert.match(templateMessage(L, '', 0), /want me to send it over\?$/);
 });

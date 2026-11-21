@@ -111,7 +111,7 @@ function render(){if(!S||!A)return;
   if(tl){const box=el('div','box');box.append(el('div','bubble bot','Sent: '+tl.msg));tl.replies.forEach(r=>box.append(el('div','bubble '+(r.bot?'bot':'me'),(r.bot?'Bot: ':'You: ')+r.text)));
     const row=el('div','row small');row.style.marginTop='6px';const a=el('a',null,'Open sample site');a.href=tl.url;a.target='_blank';a.rel='noopener';row.append(a);
     if(tl.lastIntent)row.append(el('span','mut','bot read your reply as "'+tl.lastIntent+'"'));const end=el('button',null,'End test');end.onclick=async()=>{A=await post('/api/autopilot/test-end');render()};row.append(end);box.append(row);tb.append(box)}
-  const dr=$('drafts');dr.replaceChildren();(A.drafts||[]).slice(0,5).forEach(d=>{const b=el('div','box small');b.append(el('b',null,d.name),el('div',null,d.msg));const a=el('a',null,'Open sample site');a.href=d.url;a.target='_blank';a.rel='noopener';b.append(a);dr.append(b)});
+  const dr=$('drafts');dr.replaceChildren();(A.drafts||[]).slice(0,5).forEach(d=>{const b=el('div','box small');b.append(el('b',null,d.name),el('div',null,d.msg));if(d.why)b.append(el('div','small','Personalized with: '+d.why));const a=el('a',null,'Open sample site');a.href=d.url;a.target='_blank';a.rel='noopener';b.append(a);dr.append(b)});
   if(A.settings.mode==='draft'&&!(A.drafts||[]).length)dr.append(el('div','small warn','Drafting… first ones appear within a minute (needs leads from step 2).'));
   const m=A.settings.mode;$('mode').className='mode '+m;$('mode').textContent={off:'OFF',draft:'DRAFTING',auto:'LIVE'}[m];
   $('liveCtl').style.display=m==='auto'?'flex':'none';
