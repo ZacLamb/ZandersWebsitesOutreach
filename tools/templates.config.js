@@ -69,7 +69,10 @@ module.exports = {
         testimonials: [], towns: [],
       },
     },
-    removeSelectors: ['.hero-stats', '.stats-band', 'section.testimonials', '.footer-towns', 'section:has(a[href="/service-areas"])', 'li:has(a[href^="mailto:"])', 'div:has(> a[href^="mailto:"])'],
+    logoSelectors: ['img.brand-logo'],
+    logoStyle: 'color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.45)',
+    extraCss: '.site-header.scrolled .brand span,.site-header.solid .brand span{color:inherit}',
+    removeSelectors: ['link[rel="icon"]', '.hero-stats', '.stats-band', 'section.testimonials', '.footer-towns', 'section:has(a[href="/service-areas"])', 'li:has(a[href^="mailto:"])', 'div:has(> a[href^="mailto:"])'],
     removeLinksTo: ['/service-areas', '/sitemap'],
     replacements: [
       ["\\(508\\) 292-9653", '[[PHONE]]'], ["Kevin Shaw Construction Ma LLC", '[[NAME]]'], ["KS Construction", '[[NAME]]'],
@@ -84,7 +87,7 @@ module.exports = {
       ["(^|[.!?]\\s+)we'll", "$1We'll"], ["(^|[.!?]\\s+)the owner", '$1The owner'],
       ["\\b15 years\\b", 'years'], ["Contractor \\| \\[\\[CITY\\]\\], MA Contractor", 'Contractor'],
     ],
-    leakTerms: ['Kevin', 'Shaw', 'KS Construction', 'Attleboro', '292-9653', 'ksconstructionma', '\\b623\\b', '1,052', 'Emily T', '15 years', 'Cumberland', 'Mansfield'],
+    leakTerms: ['Kevin', 'Shaw', 'KS Construction', 'logo-160', 'Attleboro', '292-9653', 'ksconstructionma', '\\b623\\b', '1,052', 'Emily T', '15 years', 'Cumberland', 'Mansfield'],
   },
   'plumber-a': {
     repo: 'massplumber',
@@ -189,7 +192,7 @@ module.exports = {
     removeBlocksMatching: ['^Service area$', 'All 15 Cape Cod towns', '\\d+°N', '^15 towns', 'Get a ballpark in 30 seconds', '^What will it cost\\?$', 'Try the instant estimate', 'Just want a number'],
     replacements: [
       ["Shea Land Management LLC", '[[NAME]]'], ["Shea Land Management", '[[NAME]]'], ["Shea\\s*Land Management", '[[NAME]]'],
-      ["East Sandwich, Massachusetts · Serving all of Cape Cod", '[[TOWN]] · Serving nearby towns'],
+      ["Serving all of Cape Cod", 'Serving nearby towns'], ["East Sandwich, Massachusetts", '[[TOWN]]'], [", Massachusetts", ', [[STATE]]'],
       ["from the Canal to Provincetown", 'across [[CITY]] and nearby towns'], ["from Bourne and Sandwich out to Provincetown", 'around [[CITY]]'],
       ["We are based in East Sandwich and work in every town on the Cape", 'We are based in [[CITY]] and work in the towns around it'],
       ["A locally owned land and landscape contractor based in East Sandwich, working across Cape Cod\\.", 'A locally owned land and landscape contractor based in [[CITY]].'],
