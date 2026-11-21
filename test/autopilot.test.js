@@ -145,3 +145,13 @@ test('STOP to RGS means no Zander text ever', async () => {
   await ap.handleInbound({ contactId: 'c1', text: 'STOP' });
   const L = ap._state().leads.ChIJ1; assert.ok(!L.zwDueAt);
 });
+
+test('templates: picks by trade, skips the original client\'s towns, fills tokens', async () => {
+  const { pickTemplate, renderTemplatePage } = await import('../src/sites.js');
+  assert.equal(pickTemplate('electrician', 'Falmouth, MA')?.id, 'electrician-a');
+  assert.equal(pickTemplate('electrician', 'Marion, MA'), null);
+  assert.equal(pickTemplate('plumber', 'Falmouth, MA'), null);
+  const html = renderTemplatePage({ tpl: 'electrician-a', name: 'Bay & Co', phone: '5085550100', town: 'Falmouth, MA', brand: 'rgs' }, '/', 'bay-co-abc123');
+  assert.match(html, /Bay &amp; Co/); assert.match(html, /\(508\) 555-0100/); assert.ok(!html.includes('[['));
+  assert.ok(!/Matt Farrell|Marion|916-1980/i.test(html));
+});

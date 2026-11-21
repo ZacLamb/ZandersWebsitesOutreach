@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { buildIndex, parseCsv } from './exclusions.js';
 import { TOWNS, TRADES } from './towns.js';
 import { createAutopilot } from './autopilot.js';
+import { renderTemplatePage } from './sites.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA_DIR = path.resolve(process.env.DATA_DIR || ROOT);
@@ -98,12 +99,36 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   if (url.pathname === '/health') return send(res, 200, 'ok', 'text/plain');
   // Public sample sites (no scripts allowed by CSP) and the GHL reply webhook (secret in query string).
-  const sm = url.pathname.match(/^\/s\/([a-z0-9-]{6,80})$/);
+  const CSP = "default-src 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' https: data:";
+  const pageHeaders = { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': CSP, 'X-Robots-Tag': 'noindex, nofollow', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'public, max-age=300' };
+  const sm = url.pathname.match(/^\/s\/([a-z0-9-]{6,80})(\/.*)?$/);
   if (req.method === 'GET' && sm) {
-    const f = path.join(DATA_DIR, 'sites', `${sm[1]}.html`);
-    if (!fs.existsSync(f)) return send(res, 404, 'Not found', 'text/plain');
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; font-src https: data:", 'X-Robots-Tag': 'noindex, nofollow', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'public, max-age=300' });
-    return res.end(fs.readFileSync(f));
+    const slug = sm[1], sub = sm[2] || '';
+    const j = path.join(DATA_DIR, 'sites', `${slug}.json`);
+    if (fs.existsSync(j)) { // multi-page template sample
+      if (!sub) { res.writeHead(301, { Location: `/s/${slug}/` }); return res.end(); }
+      const html = renderTemplatePage(JSON.parse(fs.readFileSync(j, 'utf8')), sub, slug);
+      if (!html) return send(res, 404, 'Not found', 'text/plain');
+      res.writeHead(200, pageHeaders); return res.end(html);
+    }
+    const f = path.join(DATA_DIR, 'sites', `${slug}.html`);
+    if (sub || !fs.existsSync(f)) return send(res, 404, 'Not found', 'text/plain');
+    res.writeHead(200, pageHeaders); return res.end(fs.readFileSync(f));
+  }
+  const dm = url.pathname.match(/^\/demo\/([a-z0-9-]{2,40})(\/.*)?$/); // public preview of a template with made-up details
+  if (req.method === 'GET' && dm) {
+    if (!dm[2]) { res.writeHead(301, { Location: `/demo/${dm[1]}/` }); return res.end(); }
+    let html = renderTemplatePage({ tpl: dm[1], name: 'Bay State Example Co', phone: '5085550100', town: 'Falmouth, MA', brand: 'rgs' }, dm[2], 'x');
+    if (!html) return send(res, 404, 'Not found', 'text/plain');
+    html = html.replace('<base href="/s/x/">', `<base href="/demo/${dm[1]}/">`);
+    res.writeHead(200, pageHeaders); return res.end(html);
+  }
+  const tm = url.pathname.match(/^\/t\/([a-z0-9-]{2,40})\/([\w./-]{1,200})$/);
+  if (req.method === 'GET' && tm && !tm[2].includes('..')) {
+    const f = path.join(ROOT, 'templates', tm[1], 'assets', tm[2]);
+    if (!fs.existsSync(f) || !fs.statSync(f).isFile()) return send(res, 404, 'Not found', 'text/plain');
+    const type = { css: 'text/css', js: 'text/javascript', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', woff2: 'font/woff2', woff: 'font/woff', ico: 'image/x-icon' }[path.extname(f).slice(1).toLowerCase()] || 'application/octet-stream';
+    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'public, max-age=86400', 'X-Content-Type-Options': 'nosniff' }); return res.end(fs.readFileSync(f));
   }
   if (req.method === 'POST' && url.pathname === '/hook/ghl') {
     if (!process.env.GHL_WEBHOOK_SECRET || !safeEq(url.searchParams.get('s') || '', process.env.GHL_WEBHOOK_SECRET)) return send(res, 401, { error: 'bad secret' });

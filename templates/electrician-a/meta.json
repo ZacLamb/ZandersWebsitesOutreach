@@ -1,0 +1,38 @@
+{
+  "id": "electrician-a",
+  "repo": "mattfarrel",
+  "trades": [
+    "electrician"
+  ],
+  "avoidTowns": [
+    "Marion",
+    "Mattapoisett",
+    "Wareham",
+    "Rochester",
+    "Fairhaven",
+    "New Bedford",
+    "Dartmouth",
+    "Acushnet",
+    "Middleborough",
+    "Carver",
+    "Plymouth",
+    "Bourne",
+    "Freetown",
+    "Lakeville",
+    "Westport"
+  ],
+  "pages": [
+    "/",
+    "/about",
+    "/contact",
+    "/services",
+    "/services/residential-electrical",
+    "/services/service-repair",
+    "/services/generator-installation-service",
+    "/services/panel-upgrades",
+    "/services/lighting-solutions",
+    "/services/ev-charger-installation",
+    "/services/surge-protection"
+  ],
+  "builtAt": "2026-11-21T17:25:09.081Z"
+}

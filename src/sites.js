@@ -39,12 +39,55 @@ async function getTemplate(env, trade, dir, fetchImpl) {
   return html;
 }
 
+// ---- Multi-page templates built from Zac's shipped client sites (see tools/snap.js) ----
+const TPL_DIR = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'templates');
+let TPLS = null;
+export function loadTemplates() {
+  if (TPLS) return TPLS;
+  TPLS = [];
+  if (fs.existsSync(TPL_DIR)) for (const id of fs.readdirSync(TPL_DIR)) {
+    const f = path.join(TPL_DIR, id, 'meta.json');
+    if (fs.existsSync(f)) TPLS.push({ ...JSON.parse(fs.readFileSync(f, 'utf8')), dir: path.join(TPL_DIR, id) });
+  }
+  return TPLS;
+}
+const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
+export function pickTemplate(trade, town) {
+  const city = norm(String(town || '').split(',')[0]);
+  const ok = loadTemplates().filter((t) => (t.trades || []).includes(trade) && !(t.avoidTowns || []).some((a) => norm(a) === city));
+  return ok.length ? ok[Math.floor(Math.random() * ok.length)] : null;
+}
+export function fillTokens(html, d) {
+  const digits = String(d.phone || '').replace(/\D/g, '').slice(-10);
+  const pretty = digits.length === 10 ? `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}` : String(d.phone || '');
+  const [city, state = ''] = String(d.town || '').split(',').map((x) => x.trim());
+  const v = { NAME: esc(d.name), PHONE: esc(pretty), PHONE_DIGITS: digits, CITY: esc(city), STATE: esc(state), TOWN: esc(d.town || ''), ASSET: `/t/${d.tpl}` };
+  return html.replace(/\[\[(NAME|PHONE_DIGITS|PHONE|CITY|STATE|TOWN|ASSET)\]\]/g, (_, k) => v[k]);
+}
+export function renderTemplatePage(d, page, slug) {
+  const t = loadTemplates().find((x) => x.id === d.tpl);
+  if (!t) return null;
+  const name = (!page || page === '/' ? 'index' : page.replace(/^\/|\/$/g, '').replace(/\//g, '__')).replace(/[^a-z0-9_-]/gi, '') + '.html';
+  const f = path.join(t.dir, 'pages', name);
+  if (!fs.existsSync(f)) return null;
+  let html = fillTokens(fs.readFileSync(f, 'utf8'), d);
+  html = html.replace(/<head([^>]*)>/i, `<head$1><base href="/s/${slug}/">`);
+  return withBanner(html, d.name, d.brand);
+}
+
 export async function generateSite(env, p, dir, fetchImpl = fetch, brand = 'rgs') {
-  const tpl = await getTemplate(env, p.trade, dir, fetchImpl);
+  const tpl = pickTemplate(p.trade, p.town);
+  if (tpl) {
+    const slug = newSlug(p.name);
+    fs.mkdirSync(path.join(dir, 'sites'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'sites', `${slug}.json`), JSON.stringify({ tpl: tpl.id, name: p.name, phone: p.phone, town: p.town, brand }));
+    return slug;
+  }
+  const base = await getTemplate(env, p.trade, dir, fetchImpl);
   const digits = String(p.phone || '').replace(/\D/g, '').slice(-10);
   const pretty = digits.length === 10 ? `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}` : String(p.phone || '');
   const vals = { '[[NAME]]': esc(p.name), '[[TOWN]]': esc(p.town), '[[PHONE]]': esc(pretty), '[[PHONE_DIGITS]]': digits };
-  let html = tpl; for (const t of TOKENS) html = html.split(t).join(vals[t]);
+  let html = base; for (const t of TOKENS) html = html.split(t).join(vals[t]);
   const slug = newSlug(p.name);
   fs.mkdirSync(path.join(dir, 'sites'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'sites', `${slug}.html`), withBanner(html, p.name, brand));
