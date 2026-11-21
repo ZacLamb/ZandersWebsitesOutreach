@@ -8,7 +8,8 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { buildIndex, parseCsv } from './exclusions.js';
 import { TOWNS, TRADES } from './towns.js';
-import { createAutopilot } from './autopilot.js';
+import { createAutopilot, STAGES } from './autopilot.js';
+import { PLANS } from './stripe.js';
 import { renderTemplatePage } from './sites.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -155,6 +156,10 @@ const server = http.createServer(async (req, res) => {
       });
     }
     if (req.method === 'GET' && url.pathname === '/api/autopilot') return send(res, 200, autopilot.view());
+    if (req.method === 'GET' && url.pathname === '/api/leads') return send(res, 200, { leads: autopilot.leadsView(), stages: STAGES, plans: PLANS, stripe: { rgs: !!process.env.STRIPE_KEY_RGS, zw: !!process.env.STRIPE_KEY_ZW } });
+    if (req.method === 'GET' && url.pathname === '/api/metrics') return send(res, 200, autopilot.metrics());
+    const tmatch = url.pathname.match(/^\/api\/thread\/([\w-]{3,200})$/);
+    if (req.method === 'GET' && tmatch) { try { return send(res, 200, await autopilot.thread(tmatch[1])); } catch (e) { return send(res, 404, { error: e.message }); } }
     if (req.method === 'GET' && url.pathname === '/api/prospects') return send(res, 200, prospects());
     if (req.method === 'GET' && url.pathname === '/out/prospects.csv') {
       const f = path.join(OUT, 'prospects.csv');
@@ -171,6 +176,15 @@ const server = http.createServer(async (req, res) => {
         else if (url.pathname.endsWith('/test-end')) await autopilot.endTest();
         else return send(res, 404, { error: 'not found' });
         return send(res, 200, autopilot.view());
+      }
+      if (url.pathname.startsWith('/api/lead/')) {
+        const o = JSON.parse((await readBody(req, 1e5)) || '{}'); const id = String(o.id || '');
+        try {
+          if (url.pathname === '/api/lead/reply') return send(res, 200, await autopilot.reply(id, o.text));
+          if (url.pathname === '/api/lead/stage') return send(res, 200, await autopilot.setStage(id, String(o.stage || '')));
+          if (url.pathname === '/api/lead/paylink') return send(res, 200, await autopilot.payLink(id, String(o.plan || '')));
+        } catch (e) { return send(res, 400, { error: e.message }); }
+        return send(res, 404, { error: 'not found' });
       }
       if (url.pathname === '/api/clients') {
         const body = await readBody(req);

@@ -247,3 +247,45 @@ test('only real opt-outs stop everything; a rude no still goes to Zander', () =>
   for (const t of ['STOP', 'stop.', 'Unsubscribe', 'stop texting me', "don't text me", 'remove me from your list']) assert.ok(isOptOut(t), t);
   for (const t of ['leave me alone', 'not interested', 'no thanks', 'we are all set', 'stop by tomorrow, ill look', 'f off']) assert.ok(!isOptOut(t), t);
 });
+
+test('dashboard: reply from RGS number stops the bot, stage move syncs, Stripe link + payment marks Won, metrics count it', async () => {
+  let clock = SAT_3PM_ET.getTime();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap4-')); const log = [];
+  const base = mockFetch(log); let paid = false;
+  const fetchImpl = async (url, init = {}) => {
+    if (url.startsWith('https://api.stripe.com')) {
+      log.push({ url, method: init.method, body: init.body || '' });
+      if (url.includes('/prices?')) return { ok: true, json: async () => ({ data: [] }) };
+      if (url.endsWith('/products')) return { ok: true, json: async () => ({ id: 'prod_1' }) };
+      if (url.endsWith('/prices')) return { ok: true, json: async () => ({ id: 'price_' + log.length }) };
+      if (url.endsWith('/payment_links')) return { ok: true, json: async () => ({ id: 'plink_1', url: 'https://buy.stripe.com/test_1' }) };
+      if (url.includes('/checkout/sessions?')) return { ok: true, json: async () => ({ data: paid ? [{ id: 'cs_1', amount_total: 59600, customer_details: { email: 'joe@x.com' } }] : [] }) };
+    }
+    return base(url, init);
+  };
+  const queue = [{ place_id: 'ChIJ5', name: 'Joe Roofing', phone: '(508) 555-0111', trade: 'roofing contractor', town: 'Plymouth, MA', tier: 'A', web_type: 'none' }];
+  const env = { ANTHROPIC_API_KEY: 'k', GHL_TOKEN: 't', GHL_LOCATION_ID: 'L', GHL_PIPELINE_ID: 'RGSP', GHL_STAGE_NEW_LEAD: 'R0', GHL_STAGE_TEXTED: 'R1', GHL_STAGE_RESPOND: 'R2', GHL_STAGE_RESPOND_YES: 'R3', GHL_STAGE_WON: 'R4',
+    GHL_FROM_NUMBER_RGS: '+1RGS', GHL_FROM_NUMBER_ZW: '+1ZW', PUBLIC_URL: 'https://x.app', STRIPE_KEY_RGS: 'rk_test_rgs', ALERT_CONTACT_ID: 'zac' };
+  const ap = createAutopilot({ env, dir, fetchImpl, now: () => new Date(clock), log: () => {}, deps: { nextProspect: () => queue.shift() || null, readyCount: () => 0, markState() {}, jobRunning: () => false, startFind: () => false } });
+  ap.setSettings({ mode: 'auto' }); await ap.tick(); await ap.tick();
+  await ap.handleInbound({ contactId: 'c1', text: 'how much?' }); // price on first reply: link + flagged
+  let v = ap.leadsView()[0]; assert.equal(v.unread, true); assert.equal(v.needsYou, true);
+  await ap.reply('ChIJ5', 'Hey Joe, it is $497 to build then $99 a month. Want the link?');
+  const sms = log.filter((l) => l.url.endsWith('/conversations/messages'));
+  assert.equal(sms.at(-1).body.fromNumber, '+1RGS'); assert.equal(ap._state().leads.ChIJ5.manual, true);
+  ap._state().pending = [];
+  await ap.handleInbound({ contactId: 'c1', text: 'is it a contract?' });
+  assert.equal(ap._state().pending.length, 0, 'bot stays quiet once Zac has replied');
+  await ap.setStage('ChIJ5', 'RESPOND_YES');
+  assert.equal(log.filter((l) => l.method === 'PUT').at(-1).body.pipelineStageId, 'R3');
+  const r = await ap.payLink('ChIJ5', 'monthly'); assert.equal(r.url, 'https://buy.stripe.com/test_1');
+  const pl = log.find((l) => l.url.endsWith('/payment_links')); assert.match(decodeURIComponent(pl.body), /metadata\[lead_id\]=ChIJ5/);
+  clock += 6 * 60e3; await ap.pollPayments(); assert.equal(ap._state().leads.ChIJ5.paid, undefined);
+  paid = true; clock += 6 * 60e3; await ap.pollPayments();
+  const L = ap._state().leads.ChIJ5; assert.equal(L.status, 'won'); assert.equal(L.paid.amount, 596);
+  assert.equal(log.filter((l) => l.method === 'PUT').at(-1).body.pipelineStageId, 'R4');
+  assert.ok(log.some((l) => l.url.endsWith('/conversations/messages') && l.body.contactId === 'zac' && /PAID/.test(l.body.message)));
+  const m = ap.metrics(); assert.equal(m.rgs.won, 1); assert.equal(m.rgs.collected, 596); assert.equal(m.rgs.mrr, 99); assert.equal(m.rgs.replied, 1);
+  assert.equal(m.byAngle[0].key, 'No website');
+  await assert.rejects(() => ap.payLink('ChIJ5', 'monthly_seo_x'), /Unknown plan/);
+});

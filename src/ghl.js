@@ -65,3 +65,17 @@ export const moveOpportunity = (env, oppId, stageId, fetchImpl = fetch, pipeline
   stageId && oppId ? call(env, 'PUT', `/opportunities/${oppId}`, { pipelineStageId: stageId, pipelineId }, fetchImpl) : null;
 export const addTags = (env, contactId, tags, fetchImpl = fetch) => call(env, 'POST', `/contacts/${contactId}/tags`, { tags }, fetchImpl);
 export const removeTags = (env, contactId, tags, fetchImpl = fetch) => call(env, 'DELETE', `/contacts/${contactId}/tags`, { tags }, fetchImpl);
+
+// Full SMS thread for a contact, oldest first (includes texts sent from the GHL app).
+export async function getThread(env, contactId, fetchImpl = fetch) {
+  const q = new URLSearchParams({ locationId: env.GHL_LOCATION_ID, contactId });
+  const s = await call(env, 'GET', `/conversations/search?${q}`, undefined, fetchImpl, '2021-04-15');
+  const conv = (s.conversations || [])[0];
+  if (!conv) return [];
+  const m = await call(env, 'GET', `/conversations/${conv.id}/messages?limit=100`, undefined, fetchImpl, '2021-04-15');
+  const list = m.messages?.messages || m.messages || [];
+  return list
+    .filter((x) => x.body && (!x.messageType || /SMS|TYPE_SMS/i.test(String(x.messageType))))
+    .map((x) => ({ at: x.dateAdded, text: x.body, out: String(x.direction).toLowerCase() === 'outbound', status: x.status || '' }))
+    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+}

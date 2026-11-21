@@ -5,7 +5,8 @@ import path from 'node:path';
 import { askClaude } from './claude.js';
 import { research, brief } from './research.js';
 import { generateSite } from './sites.js';
-import { stageProspect, sendSms, moveOpportunity, addTags, removeTags } from './ghl.js';
+import { stageProspect, sendSms, moveOpportunity, addTags, removeTags, getThread } from './ghl.js';
+import { createPaymentLink, paidSession, PLANS, stripeKey } from './stripe.js';
 
 // Estimated unit costs in USD (Zac's SMS rate; the rest are rough and only used for the budget guard).
 export const COST = { sms: 0.008, site: 0.01, msg: 0.03, research: 0.03, triage: 0.005, search: 0.035 }; // site = per-trade template, filled per lead
@@ -32,6 +33,21 @@ const ascii = (s) => String(s).replace(/[‘’]/g, "'").replace(/[“”]/g, '"
 export const segments = (m) => Math.max(1, Math.ceil(m.length / (m.length <= 160 ? 160 : 153)));
 const digits = (p) => String(p || '').replace(/\D/g, '').slice(-10);
 
+export const STAGES = {
+  rgs: [['NEW_LEAD', 'New Lead'], ['TEXTED', 'Texted'], ['RESPOND', 'Replied'], ['RESPOND_YES', 'Interested'], ['WON', 'Won'], ['BAD_NUMBER', 'Bad Number'], ['OPTED_OUT', 'Opted Out']],
+  zw: [['QUEUED', 'Queued'], ['TEXTED', 'Texted'], ['RESPOND', 'Replied'], ['RESPOND_YES', 'Interested'], ['WON', 'Won'], ['NOT_INTERESTED', 'Not Interested'], ['NO_RESPONSE', 'No Response'], ['OPTED_OUT', 'Opted Out']],
+};
+// Which website problem the first text led with (for reply-rate by angle).
+export function angleOf(L) {
+  const site = L.facts?.site;
+  if (!L.website) return 'No website';
+  if (/facebook\.com/i.test(L.website)) return 'Facebook only';
+  if (site && !site.works) return 'Site broken';
+  if (site && !site.mobileFriendly) return 'Not mobile friendly';
+  if (site && !site.https) return 'Not secure';
+  if (site?.copyrightYear && site.copyrightYear < new Date().getFullYear() - 2) return 'Outdated site';
+  return 'Has a site';
+}
 const hook = (p) => ({ none: "doesn't have a website on its Google listing", 'social-only': 'is only on Facebook with no website', 'builder-subdomain': 'has a website that looked a bit outdated' }[p.web_type] || 'had a website that looked a bit outdated');
 // First texts ask permission (no link). The sample link goes out only after they say yes.
 export function zanderMessage(p) {
@@ -72,8 +88,9 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
   // A lead lives in the pipeline of the brand that is talking to it; a no-go for RGS moves the same card into Zander's.
   const zwPipe = () => !!(env.GHL_ZW_PIPELINE_ID && env.GHL_ZW_STAGE_TEXTED);
   async function move(L, key, brand = L.brand === 'zw' ? 'zw' : 'rgs') {
-    if (!L.oppId) return;
     const zw = brand === 'zw' && zwPipe();
+    L.pipe = zw ? 'zw' : 'rgs'; L.stage = key; L.stageAt = now().getTime();
+    if (!L.oppId) return;
     const id = zw ? env[`GHL_ZW_STAGE_${key}`] : stage(key);
     try { await moveOpportunity(env, L.oppId, id, fetchImpl, zw ? env.GHL_ZW_PIPELINE_ID : env.GHL_PIPELINE_ID); }
     catch (e) { ev('warn', `stage move failed (${key}): ${e.message}`, L.id); }
@@ -143,7 +160,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     if (!L.facts) { try { L.facts = await research(env, L, fetchImpl); } catch { L.facts = {}; } day().spend += COST.research; }
     const r = await writeMessage(L, L.url, L.facts);
     day().spend += COST.msg;
-    L.msg = r.text; L.why = r.why; L.researched = true; L.writes = (L.writes || 0) + 1;
+    L.msg = r.text; L.why = r.why; L.researched = true; L.writes = (L.writes || 0) + 1; L.angle = angleOf(L);
   }
 
   async function draftOne() {
@@ -254,7 +271,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     const id = S.byContact[contactId]; const L = id && S.leads[id];
     if (!L) return { ignored: true };
     const body = String(text || '').slice(0, 1000);
-    L.replies.push({ at: now().toISOString(), text: body }); day().replies++;
+    L.replies.push({ at: now().toISOString(), text: body }); day().replies++; L.unread = true;
     if (isOptOut(body)) {
       L.status = 'opted_out'; if (!S.optOut.includes(L.phone)) S.optOut.push(L.phone); day().optouts++;
       ev('optout', `${L.name} opted out`, L.id);
@@ -271,7 +288,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
       S.pending.push({ id: L.id, at: now().getTime() + 30e3 + Math.random() * 60e3, text: linkMessage(L, L.url, L.brand) });
       L.zwDueAt = null; L.inZwQueue = false; await move(L, 'RESPOND');
       if (c.intent === 'price' || c.intent === 'objection') {
-        L.needsYou = true; await alertZac(`ZW lead: ${L.name} replied "${body.slice(0, 120)}"`);
+        L.needsYou = true; (L.hot ||= {})[L.brand === 'zw' ? 'zw' : 'rgs'] = true; await alertZac(`ZW lead: ${L.name} replied "${body.slice(0, 120)}"`);
         if (c.reply) S.pending.push({ id: L.id, at: now().getTime() + 120e3 + Math.random() * 60e3, text: c.reply });
       }
       ev('reply', `${L.name}: "${body.slice(0, 80)}" -> sending the sample link`, L.id);
@@ -288,12 +305,12 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     } else if (c.intent === 'wrong_person') {
       L.status = 'closed'; L.zwDueAt = null; L.inZwQueue = false; await move(L, rgs ? 'BAD_NUMBER' : 'NOT_INTERESTED');
     } else if (hot) {
-      L.status = 'hot'; L.needsYou = true;
+      L.status = 'hot'; L.needsYou = true; (L.hot ||= {})[L.brand === 'zw' ? 'zw' : 'rgs'] = true;
       await move(L, ['interested', 'price'].includes(c.intent) ? 'RESPOND_YES' : 'RESPOND');
       try { await addTags(env, contactId, ['zw-hot'], fetchImpl); } catch {}
       await alertZac(`ZW lead: ${L.name} replied "${body.slice(0, 120)}"`);
     }
-    if (c.reply && L.botReplies < S.settings.maxBotReplies) { S.pending.push({ id: L.id, at: now().getTime() + 45e3 + Math.random() * 75e3, text: c.reply }); L.botReplies++; }
+    if (c.reply && !L.manual && L.botReplies < S.settings.maxBotReplies) { S.pending.push({ id: L.id, at: now().getTime() + 45e3 + Math.random() * 75e3, text: c.reply }); L.botReplies++; }
     ev('reply', `${L.name}: "${body.slice(0, 80)}" -> ${c.intent}${c.reply ? ' (auto-reply queued)' : ''}`, L.id);
     save(); return { intent: c.intent };
   }
@@ -315,6 +332,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     if (busy) return; busy = true;
     try {
       load();
+      await pollPayments();
       if (S.settings.mode === 'off' || S.paused) { if (S.pending.some((p) => S.leads[p.id]?.test)) await flushPending(true); return; }
       await flushPending();
       // supply: keep a small buffer of drafts, top up leads with a daily search batch
@@ -371,6 +389,108 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
   const resume = () => { load().paused = null; ev('info', 'Resumed by Zac'); save(); };
   const resolve = (id) => { const L = load().leads[id]; if (L) { L.needsYou = false; if (L.status === 'hot') L.status = 'handled'; save(); } };
 
+  // ---------- working from the dashboard: inbox, stages, payments, metrics ----------
+  const brandOf = (L) => (L.brand === 'zw' ? 'zw' : 'rgs');
+  const lastAt = (L) => Math.max(L.lastSentAt || 0, L.zwSentAt || 0, ...L.replies.map((r) => Date.parse(r.at) || 0), L.paid ? Date.parse(L.paid.at) : 0);
+  function derivedStage(L) {
+    if (L.stage) return { pipe: L.pipe || brandOf(L), stage: L.stage };
+    const m = { sent: 'TEXTED', link_sent: 'RESPOND', hot: 'RESPOND_YES', opted_out: 'OPTED_OUT', bad_number: 'BAD_NUMBER', won: 'WON', zw_sent: 'TEXTED', zw_no_response: 'NO_RESPONSE' };
+    if (L.inZwQueue) return { pipe: 'zw', stage: 'QUEUED' };
+    return m[L.status] ? { pipe: brandOf(L), stage: m[L.status] } : null;
+  }
+  function leadsView() {
+    load();
+    return Object.values(S.leads).filter((L) => !L.test && L.contactId).map((L) => {
+      const st = derivedStage(L) || { pipe: 'rgs', stage: 'TEXTED' };
+      const lastIn = L.replies.filter((r) => !r.bot && !r.me).slice(-1)[0];
+      return { id: L.id, name: L.name, trade: L.trade, town: L.town, phone: L.phone, brand: brandOf(L), pipe: st.pipe, stage: st.stage, status: L.status,
+        needsYou: !!L.needsYou, unread: !!L.unread, lastAt: lastAt(L), last: lastIn?.text || '', intent: L.lastIntent || '', url: L.url || '', zwUrl: L.zwUrl || '',
+        angle: L.angle || '', why: L.why || '', paid: L.paid || null, payLinks: (L.payLinks || []).map(({ url, plan, brand, at }) => ({ url, plan, brand, at })), contactId: L.contactId };
+    }).sort((a, b) => b.lastAt - a.lastAt);
+  }
+  async function thread(id) {
+    load(); const L = S.leads[id]; if (!L) throw new Error('lead not found');
+    L.unread = false; save();
+    let msgs = null;
+    if (L.contactId && env.GHL_TOKEN) { try { msgs = await getThread(env, L.contactId, fetchImpl); } catch (e) { ev('warn', `could not load GHL thread: ${e.message}`, L.id); } }
+    if (!msgs) { // fall back to what we have locally
+      msgs = [];
+      if (L.lastSentAt) msgs.push({ at: new Date(L.lastSentAt).toISOString(), text: L.msg, out: true });
+      for (const r of L.replies) msgs.push({ at: r.at, text: r.text, out: !!(r.bot || r.me) });
+    }
+    return { lead: leadsView().find((x) => x.id === id) || { id, name: L.name }, messages: msgs, plans: PLANS[brandOf(L)], stripe: !!stripeKey(env, brandOf(L)) };
+  }
+  async function reply(id, text) {
+    load(); const L = S.leads[id]; if (!L?.contactId) throw new Error('lead has no GHL contact yet');
+    const t = String(text || '').trim().slice(0, 1000); if (!t) throw new Error('empty message');
+    if (L.status === 'opted_out') throw new Error('this lead opted out');
+    await sendSms(env, L.contactId, t, fetchImpl, brandOf(L) === 'zw' ? env.GHL_FROM_NUMBER_ZW : (env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER));
+    L.replies.push({ at: now().toISOString(), text: t, me: true }); L.manual = true; L.needsYou = false; L.unread = false;
+    day().spend += segments(t) * COST.sms; ev('send', `You replied to ${L.name}`, L.id); save(); return { ok: true };
+  }
+  async function setStage(id, key) {
+    load(); const L = S.leads[id]; if (!L) throw new Error('lead not found');
+    const pipe = derivedStage(L)?.pipe || brandOf(L);
+    if (!STAGES[pipe].some(([k]) => k === key)) throw new Error('unknown stage');
+    await move(L, key, pipe);
+    if (key === 'WON') { L.status = 'won'; L.needsYou = false; L.zwDueAt = null; }
+    ev('info', `Moved ${L.name} to ${STAGES[pipe].find(([k]) => k === key)[1]}`, L.id); save(); return { ok: true };
+  }
+  async function payLink(id, plan) {
+    load(); const L = S.leads[id]; if (!L) throw new Error('lead not found');
+    const brand = brandOf(L);
+    const link = await createPaymentLink(env, brand, plan, L, fetchImpl);
+    (L.payLinks ||= []).push({ ...link, plan, brand, at: now().toISOString() });
+    ev('info', `Payment link made for ${L.name}: ${PLANS[brand][plan].label}`, L.id); save(); return { url: link.url };
+  }
+  async function pollPayments() {
+    const t = now().getTime();
+    if (t - (S.lastPayPoll || 0) < 5 * 60e3) return; S.lastPayPoll = t;
+    const open = Object.values(S.leads).filter((L) => !L.paid && L.payLinks?.length).slice(0, 40);
+    for (const L of open) {
+      for (const k of L.payLinks) {
+        let sess = null; try { sess = await paidSession(env, k.brand, k.id, fetchImpl); } catch (e) { ev('warn', `Stripe check failed: ${e.message}`, L.id); continue; }
+        if (!sess) continue;
+        const P = PLANS[k.brand][k.plan];
+        L.paid = { at: now().toISOString(), brand: k.brand, plan: k.plan, amount: (sess.amount_total || 0) / 100, mrr: P.mrr, email: sess.customer_details?.email || '' };
+        L.status = 'won'; L.needsYou = false; L.zwDueAt = null; L.inZwQueue = false;
+        await move(L, 'WON', k.brand);
+        ev('won', `PAID: ${L.name} - ${P.label} ($${L.paid.amount.toFixed(2)} today)`, L.id);
+        await alertZac(`PAID! ${L.name} signed up: ${P.label}. $${L.paid.amount.toFixed(2)} collected.`);
+        break;
+      }
+    }
+    save();
+  }
+  function metrics() {
+    load(); const leads = Object.values(S.leads).filter((L) => !L.test);
+    const inbound = (L) => L.replies.filter((r) => !r.bot && !r.me);
+    const brandM = (b) => {
+      const texted = leads.filter((L) => (b === 'rgs' ? L.step >= 1 : L.zwSentAt));
+      const replied = texted.filter((L) => inbound(L).some((r) => (b === 'rgs' ? !L.zwSentAt || Date.parse(r.at) < L.zwSentAt : Date.parse(r.at) > L.zwSentAt)));
+      const interested = leads.filter((L) => L.hot?.[b]);
+      const won = leads.filter((L) => L.paid?.brand === b || (b === brandOf(L) && L.status === 'won' && !L.paid));
+      const optouts = texted.filter((L) => L.status === 'opted_out' && brandOf(L) === b);
+      return { texted: texted.length, replied: replied.length, interested: interested.length, won: won.length, optouts: optouts.length,
+        collected: won.reduce((a, L) => a + (L.paid?.amount || 0), 0), mrr: won.reduce((a, L) => a + (L.paid?.mrr || 0), 0) };
+    };
+    const by = (keyFn) => {
+      const m = {};
+      for (const L of leads.filter((x) => x.step >= 1)) {
+        const k = keyFn(L) || 'Unknown'; const r = (m[k] ||= { key: k, texted: 0, replied: 0, interested: 0, won: 0 });
+        r.texted++; if (inbound(L).length) r.replied++; if (L.hot) r.interested++; if (L.paid || L.status === 'won') r.won++;
+      }
+      return Object.values(m).sort((a, b) => b.texted - a.texted);
+    };
+    const days = Object.entries(S.days).sort();
+    const spend = days.reduce((a, [, v]) => a + (v.spend || 0), 0);
+    const rgs = brandM('rgs'), zw = brandM('zw');
+    const replies = rgs.replied + zw.replied, wins = rgs.won + zw.won;
+    return { rgs, zw, byAngle: by((L) => L.angle || angleOf(L)), byTrade: by((L) => L.trade), spend,
+      perReply: replies ? spend / replies : null, perWin: wins ? spend / wins : null,
+      days: days.slice(-14).map(([date, v]) => ({ date, texts: v.texts || 0, replies: v.replies || 0, spend: v.spend || 0 })) };
+  }
+
   function view() {
     load(); const d = day(); const week = Object.entries(S.days).sort().slice(-7);
     const leads = Object.values(S.leads);
@@ -382,5 +502,5 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
       setup: { claude: !!env.ANTHROPIC_API_KEY, ghl: ghlReady(), publicUrl: !!publicUrl(), stages: !!(stage('TEXTED') && stage('RESPOND_YES')), zwPipeline: zwPipe(), webhook: !!env.GHL_WEBHOOK_SECRET, alerts: !!env.ALERT_CONTACT_ID, numberRgs: !!(env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER), numberZw: !!env.GHL_FROM_NUMBER_ZW, inWindow: canSendNow(now()) },
     };
   }
-  return { tick, handleInbound, setSettings, resume, resolve, view, testSend, endTest, _state: () => load() };
+  return { tick, handleInbound, setSettings, resume, resolve, view, testSend, endTest, leadsView, thread, reply, setStage, payLink, pollPayments, metrics, _state: () => load() };
 }

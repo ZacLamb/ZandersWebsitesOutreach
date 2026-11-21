@@ -30,9 +30,30 @@ details.card>summary{cursor:pointer;font-weight:700;list-style:none}details.card
 pre{background:#0c0e13;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:220px;overflow:auto;font-size:12px;white-space:pre-wrap}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#252a35;border:1px solid var(--line);padding:10px 16px;border-radius:10px;display:none;z-index:9;max-width:92vw}
 label.f{display:block;color:var(--mut);font-size:13px;margin:10px 0 4px}
+
+nav.tabs{display:flex;gap:4px;margin-left:12px}nav.tabs button{padding:6px 12px;border-radius:8px;background:transparent;border:1px solid transparent;color:var(--mut)}nav.tabs button.on{background:#252a35;border-color:var(--line);color:var(--tx);font-weight:600}
+.dot{display:inline-block;min-width:18px;padding:0 5px;border-radius:9px;background:var(--bad);color:#fff;font-size:11px;font-weight:700;text-align:center;margin-left:4px}
+main.wide{max-width:1280px}
+.inbox{display:grid;grid-template-columns:330px 1fr;gap:12px;min-height:70vh}.ilist{max-height:78vh;overflow:auto;padding:6px}.ithread{display:flex;flex-direction:column;max-height:78vh}
+.irow{padding:10px;border-radius:10px;cursor:pointer;border:1px solid transparent}.irow:hover{background:#1d212b}.irow.on{background:#1f2a44;border-color:var(--ac)}.irow .n{font-weight:600;display:flex;gap:6px;align-items:center}.irow .s{color:var(--mut);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip{font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px;border:1px solid var(--line)}.chip.rgs{color:#7fb0ff;border-color:#2b4a80}.chip.zw{color:#ffb86b;border-color:#80522b}.chip.paid{color:#06210f;background:var(--ok);border-color:var(--ok)}
+.msgs{flex:1;overflow:auto;padding:8px 4px;display:flex;flex-direction:column;gap:6px}.msg{max-width:78%;padding:8px 11px;border-radius:12px;white-space:pre-wrap;word-wrap:break-word}.msg.in{background:#252a35;align-self:flex-start}.msg.out{background:#1f4fbf;align-self:flex-end}.msg .t{font-size:11px;color:#c9d3ea;opacity:.7;margin-top:3px}
+textarea{width:100%;min-height:70px;background:#0c0e13;color:var(--tx);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;resize:vertical}
+.board{display:flex;gap:10px;overflow-x:auto;padding-bottom:8px}.col{flex:0 0 230px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;max-height:75vh;overflow:auto}.col h3{font-size:13px;margin:4px 4px 8px;color:var(--mut);display:flex;justify-content:space-between}
+.pcard{background:#0c0e13;border:1px solid var(--line);border-radius:10px;padding:8px;margin-bottom:6px;cursor:pointer;font-size:13px}.pcard:hover{border-color:var(--ac)}.pcard b{font-size:14px}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em}td.r,th.r{text-align:right}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:760px){.inbox{grid-template-columns:1fr}.two{grid-template-columns:1fr}.ilist{max-height:34vh}nav.tabs{margin-left:0;width:100%;order:3}}
 </style></head><body>
-<header><b>ZW Outreach</b><span id="mode" class="mode off">OFF</span><span class="today" id="todayTop"></span></header>
-<main>
+<header><b>ZW Outreach</b><span id="mode" class="mode off">OFF</span>
+<nav class="tabs"><button data-v="home" class="on">Home</button><button data-v="inbox">Inbox<span class="dot" id="unreadDot" style="display:none"></span></button><button data-v="pipe">Pipeline</button><button data-v="metrics">Metrics</button></nav>
+<span class="today" id="todayTop"></span></header>
+<main id="main">
+<section id="v-inbox" style="display:none"><div class="inbox"><div class="card ilist"><input id="iq" placeholder="Search leads…" style="width:100%;margin-bottom:6px"><div id="ilist"></div></div>
+  <div class="card ithread" id="ithread"><div class="mut">Pick a conversation on the left.</div></div></div></section>
+<section id="v-pipe" style="display:none"><div class="row" style="margin-bottom:10px"><button id="pRgs" class="p">RGS Outreach</button><button id="pZw">Zander's Websites Outreach</button><span class="small mut">Click a card to open the conversation. Move stages from inside the conversation.</span></div><div class="board" id="board"></div></section>
+<section id="v-metrics" style="display:none"><div id="metrics"></div></section>
+<section id="v-home">
 <div id="pausedBox" class="card alert" style="display:none"></div>
 <div id="hotWrap" style="display:none"><h2>🔥 Needs you</h2><div class="card hot" id="hot"></div></div>
 
@@ -72,7 +93,7 @@ label.f{display:block;color:var(--mut);font-size:13px;margin:10px 0 4px}
   <div class="box small" id="keys"></div>
 </details>
 <details class="card"><summary>Activity log</summary><div id="events" class="small" style="margin-top:8px"></div><pre id="joblog"></pre></details>
-</main><div id="toast"></div>
+</section></main><div id="toast"></div>
 <script>
 const $=id=>document.getElementById(id),H={'X-ZW':'1','Content-Type':'application/json'};
 const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
@@ -92,7 +113,7 @@ $('pauseBtn').onclick=()=>setMode('draft','Paused: drafting only, nothing sends.
 $('offBtn').onclick=()=>setMode('off','Autopilot is off.');
 $('sSave').onclick=async()=>{try{A=await post('/api/autopilot/settings',{dailyBudget:+$('sBudget').value,dailyTextCap:+$('sCap').value,offer:$('sOffer').value,offerZw:$('sOfferZw').value});toast('Saved');render()}catch(e){toast(e.message)}};
 $('skipBtn').onclick=async()=>{try{await post('/api/skip',{ids:[...sel]});sel.clear();loadLeads()}catch(e){toast(e.message)}};
-$('stageBtn').onclick=async()=>{if(!confirm('Add '+sel.size+' lead(s) to GHL "50$ Sites" without texting them?'))return;try{await post('/api/push',{ids:[...sel],yes:true});sel.clear();toast('Adding to GHL…')}catch(e){toast(e.message)}};
+$('stageBtn').onclick=async()=>{if(!confirm('Add '+sel.size+' lead(s) to GHL "RGS Outreach" without texting them?'))return;try{await post('/api/push',{ids:[...sel],yes:true});sel.clear();toast('Adding to GHL…')}catch(e){toast(e.message)}};
 ['fTier','fView','fText'].forEach(i=>$(i).oninput=()=>{sel.clear();renderLeads()});
 
 function stepState(){
@@ -119,7 +140,7 @@ function render(){if(!S||!A)return;
   if(A.paused){pb.append(el('div',null,'⏸ Autopilot paused itself: '+A.paused));const b=el('button','p','Resume');b.style.marginTop='8px';b.onclick=async()=>{A=await post('/api/autopilot/resume');render()};pb.append(b)}
   const h=$('hot');h.replaceChildren();$('hotWrap').style.display=A.needsYou.length?'block':'none';
   A.needsYou.forEach(x=>{const d=el('div','lead');const mm=el('div','m');mm.append(el('b',null,x.name),el('div','small','“'+x.last+'”'),el('div','small mut','Bot read it as: '+x.intent));
-    const a=el('a','btn','Reply in GHL');a.href='https://app.gohighlevel.com/v2/location/'+A.locationId+'/contacts/detail/'+x.contactId;a.target='_blank';a.rel='noopener';
+    const a=el('button','p','Open');a.onclick=()=>openThread(x.id);
     const b=el('button',null,'Done');b.onclick=async()=>{A=await post('/api/autopilot/resolve',{id:x.id});render()};d.append(mm,a,b);h.append(d)});
   const t=A.today;$('todayTop').textContent=t.texts+' texts · '+t.replies+' replies · $'+t.spend.toFixed(2)+' today';
   $('stats').replaceChildren(...[[t.texts+' / '+A.effCap,'Texts today'],[t.replies,'Replies'],[t.optouts,'Opt-outs'],['$'+t.spend.toFixed(2)+' / $'+A.settings.dailyBudget,'Spent'],[A.zwScheduled,"Queued for Zander's"],[(A.counts.sent||0)+(A.counts.zw_sent||0),'Waiting on reply']].map(([v,l])=>{const d=el('div','stat');d.append(el('b',null,String(v)),el('span','small mut',l));return d}));
@@ -145,4 +166,70 @@ async function refresh(){
   if(wasRunning&&!S.job.running){loadLeads();toast(S.job.code===0?'Search finished.':'Search had a problem; see Activity log.')}wasRunning=S.job.running;
   render();clearTimeout(refresh.t);refresh.t=setTimeout(refresh,S.job.running||A.testActive?3000:8000)}
 refresh().then(loadLeads);
+
+// ---------- tabs, inbox, pipeline, metrics ----------
+let view='home',L=null,cur=null,pipeBrand='rgs';
+const money=n=>'$'+(+n||0).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2});
+const ago=t=>{if(!t)return'';const m=(Date.now()-t)/6e4;return m<60?Math.max(1,m|0)+'m':m<1440?(m/60|0)+'h':(m/1440|0)+'d'};
+const fmtT=s=>{const d=new Date(s);return isNaN(d)?'':d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})};
+document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick=()=>show(b.dataset.v));
+function show(v){view=v;document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  for(const x of ['home','inbox','pipe','metrics'])$('v-'+x).style.display=x===v?'block':'none';
+  $('main').classList.toggle('wide',v!=='home');if(v==='metrics')loadMetrics();else if(v!=='home')loadLeadsW()}
+async function loadLeadsW(){try{L=await (await fetch('/api/leads')).json()}catch{return}
+  const u=L.leads.filter(x=>x.unread||x.needsYou).length;$('unreadDot').style.display=u?'inline-block':'none';$('unreadDot').textContent=u;
+  if(view==='inbox')renderInbox();if(view==='pipe')renderBoard()}
+const stageName=(pipe,k)=>((L?.stages?.[pipe]||[]).find(s=>s[0]===k)||[,k])[1];
+$('iq').oninput=()=>renderInbox();
+function renderInbox(){const q=$('iq').value.toLowerCase(),box=$('ilist');box.replaceChildren();
+  const rows=L.leads.filter(x=>!q||(x.name+' '+x.town+' '+x.trade).toLowerCase().includes(q));
+  if(!rows.length)box.append(el('div','small mut','No conversations yet. Leads show up here once Autopilot has texted them.'));
+  rows.forEach(x=>{const r=el('div','irow'+(cur===x.id?' on':''));const n=el('div','n');n.append(el('span',null,x.name),el('span','chip '+x.brand,x.brand==='zw'?"Zander's":'RGS'));
+    if(x.paid)n.append(el('span','chip paid','PAID'));if(x.unread||x.needsYou)n.append(el('span','dot','!'));const t=el('span','small mut',ago(x.lastAt));t.style.marginLeft='auto';n.append(t);
+    r.append(n,el('div','s',stageName(x.pipe,x.stage)+(x.last?' · “'+x.last+'”':'')));r.onclick=()=>openThread(x.id);box.append(r)})}
+async function openThread(id){cur=id;if(view!=='inbox')show('inbox');const th=$('ithread');th.replaceChildren(el('div','mut','Loading conversation…'));
+  let T;try{const r=await fetch('/api/thread/'+encodeURIComponent(id));T=await r.json();if(!r.ok)throw new Error(T.error)}catch(e){th.replaceChildren(el('div','bad',e.message));return}
+  const x=T.lead;th.replaceChildren();
+  const hd=el('div','row');hd.append(el('b',null,x.name),el('span','chip '+x.brand,x.brand==='zw'?"Zander's":'RGS'));if(x.paid)hd.append(el('span','chip paid','PAID '+money(x.paid.amount)));
+  const sp=el('span');sp.style.flex='1';hd.append(sp);
+  const sel=el('select');(L.stages[x.pipe]||[]).forEach(([k,n])=>{const o=el('option',null,n);o.value=k;if(k===x.stage)o.selected=true;sel.append(o)});
+  sel.onchange=async()=>{try{await post('/api/lead/stage',{id:x.id,stage:sel.value});toast('Moved to '+sel.selectedOptions[0].textContent);loadLeadsW()}catch(e){toast(e.message)}};hd.append(sel);
+  const sub=el('div','small mut',[x.trade,x.town,x.phone].filter(Boolean).join(' · '));
+  const links=el('div','row small');const site=x.brand==='zw'&&x.zwUrl?x.zwUrl:x.url;if(site){const a=el('a',null,'Their sample site');a.href=site;a.target='_blank';a.rel='noopener';links.append(a)}
+  if(T.lead.contactId){const g=el('a',null,'Open in GHL');g.href='https://app.gohighlevel.com/v2/location/'+(A?.locationId||'')+'/contacts/detail/'+T.lead.contactId;g.target='_blank';g.rel='noopener';links.append(g)}
+  if(x.why)links.append(el('span','mut','First text used: '+x.why));
+  const ms=el('div','msgs');T.messages.forEach(m=>{const b=el('div','msg '+(m.out?'out':'in'),m.text);b.append(el('div','t',fmtT(m.at)));ms.append(b)});
+  if(!T.messages.length)ms.append(el('div','small mut','No messages yet.'));
+  const ta=el('textarea');ta.placeholder='Text '+x.name+' from the '+(x.brand==='zw'?"Zander's":'RGS')+' number…';
+  const send=el('button','p','Send');send.onclick=async()=>{if(!ta.value.trim())return;send.disabled=true;try{await post('/api/lead/reply',{id:x.id,text:ta.value});ta.value='';toast('Sent');openThread(x.id);loadLeadsW()}catch(e){toast(e.message)}send.disabled=false};
+  const pay=el('div','row small');pay.style.marginTop='6px';
+  if(!T.stripe)pay.append(el('span','warn','Payment links: add '+(x.brand==='zw'?'STRIPE_KEY_ZW':'STRIPE_KEY_RGS')+' in Railway to turn these on.'));
+  else Object.entries(T.plans).forEach(([k,p])=>{const b=el('button',null,'💳 '+p.label);b.onclick=async()=>{b.disabled=true;try{const r=await post('/api/lead/paylink',{id:x.id,plan:k});
+    ta.value=(ta.value?ta.value.trim()+' ':'')+(x.brand==='zw'?"Here's the link to sign up! "+r.url+" Thank you so much!!":"Here's the link to get you set up: "+r.url);ta.focus();toast('Link created. Review the text, then hit Send.')}catch(e){toast(e.message)}b.disabled=false};pay.append(b)});
+  (x.payLinks||[]).forEach(p=>pay.append(el('span','mut','Link sent '+fmtT(p.at)+' ('+(L.plans[p.brand]?.[p.plan]?.label||p.plan)+')')));
+  const comp=el('div');comp.style.marginTop='8px';const row=el('div','row');row.style.marginTop='6px';row.append(send);comp.append(ta,row,pay);
+  th.append(hd,sub,links,ms,comp);ms.scrollTop=ms.scrollHeight;renderInbox()}
+$('pRgs').onclick=()=>{pipeBrand='rgs';renderBoard()};$('pZw').onclick=()=>{pipeBrand='zw';renderBoard()};
+function renderBoard(){$('pRgs').className=pipeBrand==='rgs'?'p':'';$('pZw').className=pipeBrand==='zw'?'p':'';const b=$('board');b.replaceChildren();
+  (L.stages[pipeBrand]||[]).forEach(([k,n])=>{const items=L.leads.filter(x=>x.pipe===pipeBrand&&x.stage===k);const c=el('div','col');const h=el('h3');h.append(el('span',null,n),el('span',null,String(items.length)));c.append(h);
+    items.forEach(x=>{const d=el('div','pcard');const t=el('div');t.append(el('b',null,x.name));if(x.unread||x.needsYou)t.append(el('span','dot','!'));if(x.paid)t.append(el('span','chip paid',money(x.paid.amount)));
+      d.append(t,el('div','mut',[x.trade,x.town].filter(Boolean).join(' · ')));if(x.last)d.append(el('div',null,'“'+x.last.slice(0,90)+'”'));d.onclick=()=>openThread(x.id);c.append(d)});
+    if(!items.length)c.append(el('div','small mut','—'));b.append(c)})}
+const pct=(a,b)=>b?Math.round(100*a/b)+'%':'–';
+async function loadMetrics(){let M;try{M=await (await fetch('/api/metrics')).json()}catch{return}
+  const box=$('metrics');box.replaceChildren();
+  const top=el('div','card');const g=el('div','grid');[[money(M.rgs.collected+M.zw.collected),'Collected'],[money(M.rgs.mrr+M.zw.mrr)+'/mo','New monthly revenue'],[M.rgs.won+M.zw.won,'Clients won'],[money(M.spend),'Total spent'],[M.perReply==null?'–':money(M.perReply),'Cost per reply'],[M.perWin==null?'–':money(M.perWin),'Cost per client']]
+    .forEach(([v,l])=>{const d=el('div','stat');d.append(el('b',null,String(v)),el('span','small mut',l));g.append(d)});top.append(g);box.append(el('h2',null,'Overall'),top);
+  const two=el('div','two');[['rgs','RGS'],['zw',"Zander's Websites"]].forEach(([k,n])=>{const m=M[k],c=el('div','card');c.append(el('b',null,n));const t=el('table');
+    const rows=[['Texted',m.texted,''],['Replied',m.replied,pct(m.replied,m.texted)],['Interested',m.interested,pct(m.interested,m.texted)],['Won',m.won,pct(m.won,m.texted)],['Opted out',m.optouts,pct(m.optouts,m.texted)],['Collected',money(m.collected),''],['Monthly revenue',money(m.mrr)+'/mo','']];
+    rows.forEach(([a,b,cc])=>{const tr=el('tr');tr.append(el('td',null,a),el('td','r',String(b)),el('td','r mut',cc));t.append(tr)});c.append(t);two.append(c)});
+  box.append(el('h2',null,'By brand'),two);
+  const tbl=(title,rows,label)=>{const c=el('div','card');const t=el('table');const h=el('tr');[label,'Texted','Reply rate','Interested','Won'].forEach((x,i)=>h.append(el('th',i?'r':null,x)));t.append(h);
+    rows.forEach(r=>{const tr=el('tr');tr.append(el('td',null,r.key),el('td','r',String(r.texted)),el('td','r',pct(r.replied,r.texted)),el('td','r',String(r.interested)),el('td','r',String(r.won)));t.append(tr)});
+    if(!rows.length){const tr=el('tr');const td=el('td','mut','No texts sent yet.');td.colSpan=5;tr.append(td);t.append(tr)}c.append(t);box.append(el('h2',null,title),c)};
+  tbl('Which first-text angle gets replies',M.byAngle,'Angle');tbl('Which trades reply',M.byTrade,'Trade');
+  const c=el('div','card');const t=el('table');const h=el('tr');['Day','Texts','Replies','Spend'].forEach((x,i)=>h.append(el('th',i?'r':null,x)));t.append(h);
+  M.days.slice().reverse().forEach(d=>{const tr=el('tr');tr.append(el('td',null,d.date),el('td','r',String(d.texts)),el('td','r',String(d.replies)),el('td','r',money(d.spend)));t.append(tr)});c.append(t);box.append(el('h2',null,'Last 14 days'),c)}
+setInterval(()=>{if(view==='inbox'||view==='pipe')loadLeadsW();else if(view==='metrics')loadMetrics();else fetch('/api/leads').then(r=>r.json()).then(j=>{L=j;const u=j.leads.filter(x=>x.unread||x.needsYou).length;$('unreadDot').style.display=u?'inline-block':'none';$('unreadDot').textContent=u}).catch(()=>{})},15000);
+loadLeadsW();
 </script></body></html>
