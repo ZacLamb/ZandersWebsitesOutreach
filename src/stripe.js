@@ -77,3 +77,16 @@ export async function paidSession(env, brand, linkId, fetchImpl = fetch) {
   const j = await sreq(key, 'GET', '/checkout/sessions', { payment_link: linkId, status: 'complete', limit: 1 }, fetchImpl);
   return j.data?.[0] || null;
 }
+
+// Health check: make sure the key works by creating the plan prices and a throwaway link, then switching the link off.
+export async function checkStripe(env, brand, fetchImpl = fetch) {
+  const key = stripeKey(env, brand);
+  if (!key) return { ok: false, error: 'no key set' };
+  try {
+    const plans = Object.keys(PLANS[brand]);
+    const link = await createPaymentLink(env, brand, plans[0], { id: 'stripe-check', name: 'Stripe check' }, fetchImpl);
+    await sreq(key, 'POST', `/payment_links/${link.id}`, { active: 'false' }, fetchImpl);
+    for (const p of plans.slice(1)) for (const lk of PLANS[brand][p].prices) await ensurePrice(key, lk, fetchImpl);
+    return { ok: true, livemode: !/_test_/.test(key), testLink: link.id, deactivated: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+}

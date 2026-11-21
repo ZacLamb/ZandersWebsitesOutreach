@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { buildIndex, parseCsv } from './exclusions.js';
 import { TOWNS, TRADES } from './towns.js';
 import { createAutopilot, STAGES } from './autopilot.js';
-import { PLANS } from './stripe.js';
+import { PLANS, checkStripe } from './stripe.js';
 import { renderTemplatePage } from './sites.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -177,6 +177,7 @@ const server = http.createServer(async (req, res) => {
         else return send(res, 404, { error: 'not found' });
         return send(res, 200, autopilot.view());
       }
+      if (url.pathname === '/api/stripe/check') return send(res, 200, { rgs: await checkStripe(process.env, 'rgs'), zw: await checkStripe(process.env, 'zw') });
       if (url.pathname.startsWith('/api/lead/')) {
         const o = JSON.parse((await readBody(req, 1e5)) || '{}'); const id = String(o.id || '');
         try {
