@@ -22,9 +22,9 @@ test('opt-out detection', () => {
   for (const t of ['how much?', 'who is this', 'stop by tomorrow?', 'sounds good']) assert.equal(isOptOut(t), false, t);
 });
 
-test('template message is ASCII, has link + STOP, one segment-ish', () => {
+test('first text asks permission: ASCII, short, no link, no opt-out line', () => {
   const m = templateMessage({ name: "Joe's Roofing", web_type: 'none', reviews: '12' }, 'https://x.up.railway.app/s/joes-abc123', 0);
-  assert.match(m, /Zac here/i); assert.ok(m.length < 160); assert.match(m, /STOP/); assert.ok(m.includes('https://x.up.railway.app/s/joes-abc123'));
+  assert.match(m, /Zac here/i); assert.ok(m.length < 160); assert.ok(!/STOP|http/i.test(m)); assert.match(m, /\?$/);
   assert.ok(/^[\x20-\x7E]+$/.test(m)); assert.ok(segments(m) <= 3);
 });
 
@@ -41,7 +41,8 @@ function mockFetch(log) {
     log.push({ url, method: init.method, body });
     if (url.includes('anthropic')) {
       if (body.system.includes('sample websites')) return J({ content: [{ type: 'text', text: '<!doctype html><html><body><h1>[[NAME]]</h1><p>[[TOWN]] [[PHONE]]</p><a href="tel:[[PHONE_DIGITS]]">Call</a></body></html>' }] });
-      if (body.system.includes('ONE first text')) { const link = body.messages[0].content.match(/Link: (\S+)/)[1]; return J({ content: [{ type: 'text', text: `Morning! This is Zac. Built a free sample site for Joe's Roofing: ${link} Reply STOP to opt out.` }] }); }
+      if (body.system.includes('ONE first text')) return J({ content: [{ type: 'text', text: `Morning! This is Zac. Built a free sample site for Joe's Roofing, want me to send it over?` }] });
+      if (/Their reply: sure/.test(body.messages[0].content)) return J({ content: [{ type: 'text', text: '{"intent":"interested","reply":""}' }] });
       return J({ content: [{ type: 'text', text: '{"intent":"price","reply":"Good question, let me grab the details and text you right back."}' }] });
     }
     if (url.includes('/contacts/search/duplicate')) return J({ message: 'none' }, 404);
@@ -68,7 +69,7 @@ test('auto mode drafts, stages in GHL, texts once, moves stage, tracks spend', a
   const { ap, log, marks, dir } = setup(); ap.setSettings({ mode: 'auto', dailyBudget: 5, dailyTextCap: 25 });
   await ap.tick(); await ap.tick();
   const sms = log.filter((l) => l.url.endsWith('/conversations/messages'));
-  assert.equal(sms.length, 1); assert.equal(sms[0].body.contactId, 'c1'); assert.match(sms[0].body.message, /\/s\/joes-roofing-/);
+  assert.equal(sms.length, 1); assert.equal(sms[0].body.contactId, 'c1'); assert.ok(!/http/.test(sms[0].body.message)); assert.match(sms[0].body.message, /send it/);
   assert.ok(log.some((l) => l.method === 'PUT' && l.body.pipelineStageId === 'S1'));
   const v = ap.view(); assert.equal(v.today.texts, 1); assert.ok(v.today.spend > 0 && v.today.spend < 1); assert.equal(marks.ChIJ1, 'created');
   assert.equal(fs.readdirSync(path.join(dir, 'sites')).filter((f) => f.endsWith('.html')).length, 1);
@@ -96,11 +97,11 @@ test('STOP reply opts out, tags, never texts again, no AI call', async () => {
   assert.equal(ap.view().counts.opted_out, 1);
 });
 
-test('price question: flags Zac, moves to Respond Yes, queues one holding reply only', async () => {
-  const { ap, log } = setup(); ap.setSettings({ mode: 'auto' }); await ap.tick(); await ap.tick();
+test('price question as first reply: sends the link, flags Zac, queues the bot answer after it', async () => {
+  const { ap } = setup(); ap.setSettings({ mode: 'auto' }); await ap.tick(); await ap.tick();
   await ap.handleInbound({ contactId: 'c1', text: 'how much is it?' });
-  const v = ap.view(); assert.equal(v.needsYou.length, 1); assert.ok(log.some((l) => l.method === 'PUT' && l.body.pipelineStageId === 'S2'));
-  assert.equal(ap._state().pending.length, 1); assert.ok(!/\$\d/.test(ap._state().pending[0].text));
+  const v = ap.view(); assert.equal(v.needsYou.length, 1);
+  const pend = ap._state().pending; assert.equal(pend.length, 2); assert.match(pend[0].text, /\/s\//); assert.ok(pend[1].at > pend[0].at);
 });
 
 test('unknown contacts (not ours) are ignored', async () => {
@@ -183,4 +184,15 @@ test('phone test: texts Zac from the brand number, bot replies even when Off, En
   await ap.endTest();
   assert.equal(ap.view().testActive, false); assert.ok(log.some((l) => l.url.includes('/contacts/zac1/tags') && l.method === 'DELETE'));
   assert.deepEqual(await ap.handleInbound({ contactId: 'zac1', text: 'hi' }), { ignored: true });
+});
+
+test('ask-first: a yes gets the sample link from the same number, no hot alert; price question after that pings Zac', async () => {
+  const { ap, log } = setup({ ALERT_CONTACT_ID: 'zac1' }); ap.setSettings({ mode: 'auto' }); await ap.tick(); await ap.tick();
+  const r = await ap.handleInbound({ contactId: 'c1', text: 'sure send it' });
+  assert.equal(r.link, true); assert.equal(ap.view().needsYou.length, 0);
+  ap._state().pending.forEach((p) => (p.at = 0)); await ap.tick();
+  const msgs = log.filter((l) => l.url.endsWith('/conversations/messages'));
+  const link = msgs.at(-1); assert.match(link.body.message, /\/s\/joes-roofing-/); assert.equal(link.body.fromNumber, '+15085550001');
+  await ap.handleInbound({ contactId: 'c1', text: 'nice, how much?' });
+  assert.equal(ap.view().needsYou.length, 1);
 });

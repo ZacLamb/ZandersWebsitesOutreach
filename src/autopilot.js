@@ -32,15 +32,20 @@ export const segments = (m) => Math.max(1, Math.ceil(m.length / (m.length <= 160
 const digits = (p) => String(p || '').replace(/\D/g, '').slice(-10);
 
 const hook = (p) => ({ none: "doesn't have a website on its Google listing", 'social-only': 'is only on Facebook with no website', 'builder-subdomain': 'has a website that looked a bit outdated' }[p.web_type] || 'had a website that looked a bit outdated');
-export function zanderMessage(p, url) {
-  return ascii(`Hi! I'm Zander, I'm 7 and building websites is my first business (my dad helps). I made one for ${p.name}: ${url} It's $20/mo, no setup fee. Reply STOP to opt out.`);
+// First texts ask permission (no link). The sample link goes out only after they say yes.
+export function zanderMessage(p) {
+  return ascii(`Hi! I'm Zander, I'm 7 and building websites is my first business (my dad helps). I made a free one for ${p.name}, can I send it to you? It's $20/mo, no setup fee.`);
 }
 export function templateMessage(p, url, step) {
-  if (step === 1) return ascii(`Hey, just checking you saw the sample site I built for ${p.name}? ${url} Happy to tweak it, no pressure.`);
-  if (step === 2) return ascii(`Last note from me, the sample for ${p.name} stays up this week: ${url} Thanks either way! Reply STOP to opt out.`);
+  if (step === 1) return ascii(`Hey, just checking, want me to send over the free sample site I built for ${p.name}?`);
+  if (step === 2) return ascii(`Last note from me, happy to send the free sample site for ${p.name} anytime. Have a good one!`);
   // Short wins: in Zac's history, texts under ~140 chars got ~35% replies vs ~9% over 300 chars (confounded, but consistent).
-  return ascii(`Hey, Zac here. Built a free sample site for ${p.name}: ${url} Worth a look? Reply STOP to opt out.`);
+  return ascii(`Hey, Zac here. Built a free sample site for ${p.name}, want me to send it over?`);
 }
+export const linkMessage = (p, url, brand) => ascii(brand === 'zw'
+  ? `Yay! Here it is: ${url} I made it for ${p.name}. Tell me what you think!`
+  : `Here you go: ${url} Built it for ${p.name}. Let me know what you think, easy to tweak.`);
+const SKIP_LINK = new Set(['not_interested', 'wrong_person', 'asks_if_bot']);
 
 const VOICE = `Zac's style (from texts that got replies): casual, local, friendly, short. Examples:
 "Morning Tony! Any reason your google profile doesnt have a website to show off the awesome work you do? Built one for you if you'd have any interest, no monthly contracts just a site that works and can be updated easily <link>"
@@ -70,11 +75,11 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
     if (!env.ANTHROPIC_API_KEY) return templateMessage(p, url, 0);
     try {
       const t = await askClaude(env, {
-        system: `${VOICE}\nWrite ONE first text from Zac to the owner of a local trade business. Rules: SHORT, under 150 characters not counting the link (short texts get 3-4x the replies), plain ASCII, no emoji, at most one true specific detail from the facts, include the link exactly as given, say it is a free sample he built, no price, no hype, no invented facts, do not claim to know the owner's name. Start with "Hey" or "Morning". Include "Zac". End with "Reply STOP to opt out." Return only the text.`,
-        user: `Business: ${p.name}\nTrade: ${p.trade}\nTown: ${p.town}\nWebsite situation: ${hook(p)}\nGoogle reviews: ${p.reviews || 'unknown'} (rating ${p.rating || 'unknown'})\nLink: ${url}`, maxTokens: 300,
+        system: `${VOICE}\nWrite ONE first text from Zac to the owner of a local trade business. Rules: SHORT, under 140 characters (short texts get 3-4x the replies), plain ASCII, no emoji, NO link and no URL, say he built them a free sample site and ASK if they want him to send it, at most one true specific detail from the facts, no price, no hype, no invented facts, do not claim to know the owner's name. Start with "Hey" or "Morning". Include "Zac". Return only the text.`,
+        user: `Business: ${p.name}\nTrade: ${p.trade}\nTown: ${p.town}\nWebsite situation: ${hook(p)}\nGoogle reviews: ${p.reviews || 'unknown'} (rating ${p.rating || 'unknown'})`, maxTokens: 300,
       }, fetchImpl);
       const m = ascii(t);
-      return m.includes(url) && /stop/i.test(m) && m.length <= 260 ? m : templateMessage(p, url, 0);
+      return !/https?:|www\.|\.com|\/s\//i.test(m) && /\?/.test(m) && m.length <= 200 ? m : templateMessage(p, url, 0);
     } catch (e) { ev('warn', `message draft fell back to template: ${e.message}`); return templateMessage(p, url, 0); }
   }
 
@@ -113,13 +118,13 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
     if (!L && env.GHL_FROM_NUMBER_ZW) {
       const z = Object.values(S.leads).find((x) => x.zwDueAt && x.zwDueAt <= t && !x.zwSentAt && x.status !== 'opted_out' && x.contactId);
       if (z) {
-        const zmsg = zanderMessage(z, z.zwUrl || z.url);
+        const zmsg = zanderMessage(z);
         if (!room(segments(zmsg) * COST.sms)) return false;
         try {
           if (!z.zwUrl) { const slug = await generateSite(env, { name: z.name, phone: z.phone, trade: z.trade, town: z.town }, dir, fetchImpl, 'zw'); z.zwUrl = `${publicUrl()}/s/${slug}`; }
-          const m2 = zanderMessage(z, z.zwUrl);
+          const m2 = zanderMessage(z);
           await sendSms(env, z.contactId, m2, fetchImpl, env.GHL_FROM_NUMBER_ZW);
-          d.texts++; d.spend += segments(m2) * COST.sms; z.zwSentAt = t; z.brand = 'zw'; z.status = 'zw_sent'; z.botReplies = 0; z.msg = m2;
+          d.texts++; d.spend += segments(m2) * COST.sms; z.zwSentAt = t; z.brand = 'zw'; z.status = 'zw_sent'; z.botReplies = 0; z.msg = m2; z.linkSent = false; z.url = z.zwUrl;
           try { await addTags(env, z.contactId, ['zw-zander-pitch'], fetchImpl); } catch {}
           ev('send', `Zander's Websites text to ${z.name}`, z.id);
           S.nextSendAt = t + ((9.5 * 3600e3) / effCap()) * (0.7 + Math.random() * 0.6);
@@ -157,7 +162,7 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
     try {
       const out = await askClaude(env, {
         system: `You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websites (Zander, age 7, with his dad Zac helping)" : 'Zac from Revenue Generating Solutions'}, who offered a local trade business a free sample website. Return ONLY JSON: {"intent": one of "interested","price","question","objection","not_interested","wrong_person","asks_if_bot","other","reply": string}. "reply" is a short friendly plain-ASCII text from Zac (max 220 chars, no emoji) or "" if no reply should be sent. Rules: never state any price or timeline unless it appears in OFFER below; if price is asked and OFFER is empty, reply that you'll grab the details and text right back; never promise anything not in OFFER; if they ask whether this is a bot/automated/AI, intent "asks_if_bot" and reply ""; if not_interested/wrong_person, reply "" ; keep the sender's casual local voice; never mention the other brand.\nOFFER: ${(L.brand === 'zw' ? S.settings.offerZw : S.settings.offer) || '(none)'}`,
-        user: `Business: ${L.name}\nOur text: ${L.msg}\nTheir reply: ${text}`, maxTokens: 300,
+        user: `Business: ${L.name}\nOur text: ${L.msg}\n${L.linkSent ? 'We already sent them the sample link.' : 'We have not sent the link yet; a separate message with the link is sent automatically, so your reply must NOT include a link.'}\nTheir reply: ${text}`, maxTokens: 300,
       }, fetchImpl);
       day().spend += COST.triage;
       const j = JSON.parse(out.match(/\{[\s\S]*\}/)[0]);
@@ -185,6 +190,18 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
       save(); return { optout: true };
     }
     const c = await classify(L, body); L.lastIntent = c.intent;
+    if (!L.linkSent && !SKIP_LINK.has(c.intent)) {
+      // They answered the ask-first text: send the sample link. Only a price question also pulls Zac in.
+      L.linkSent = true; L.status = 'link_sent';
+      S.pending.push({ id: L.id, at: now().getTime() + 30e3 + Math.random() * 60e3, text: linkMessage(L, L.url, L.brand) });
+      try { await moveOpportunity(env, L.oppId, stage('RESPOND'), fetchImpl); } catch {}
+      if (c.intent === 'price' || c.intent === 'objection') {
+        L.needsYou = true; await alertZac(`ZW lead: ${L.name} replied "${body.slice(0, 120)}"`);
+        if (c.reply) S.pending.push({ id: L.id, at: now().getTime() + 120e3 + Math.random() * 60e3, text: c.reply });
+      }
+      ev('reply', `${L.name}: "${body.slice(0, 80)}" -> sending the sample link`, L.id);
+      save(); return { intent: c.intent, link: true };
+    }
     if (L.brand !== 'zw' && ['not_interested', 'objection'].includes(c.intent) && !L.zwSentAt) L.zwDueAt = now().getTime() + S.settings.zwDelayDays * DAY;
     if (['interested', 'price'].includes(c.intent)) L.zwDueAt = null;
     const hot = ['interested', 'price', 'objection', 'asks_if_bot', 'other', 'question'].includes(c.intent);
@@ -242,7 +259,7 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
     const slug = await generateSite(env, p, dir, fetchImpl, brand);
     const url = `${publicUrl()}/s/${slug}`;
     const L = (S.leads[p.place_id] = { id: p.place_id, test: true, name: p.name, phone: p.phone, trade: p.trade, town: p.town, tier: 'A', brand, slug, url, status: 'sent', step: 1, replies: [], botReplies: 0, contactId: env.ALERT_CONTACT_ID, created: now().toISOString(), lastSentAt: now().getTime() });
-    L.msg = brand === 'zw' ? zanderMessage(p, url) : await writeMessage(p, url);
+    L.msg = brand === 'zw' ? zanderMessage(p) : await writeMessage(p, url);
     await addTags(env, L.contactId, ['zw-autopilot'], fetchImpl);
     await sendSms(env, L.contactId, L.msg, fetchImpl, from);
     S.byContact[L.contactId] = L.id;
