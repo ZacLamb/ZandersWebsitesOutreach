@@ -71,7 +71,7 @@ function transform(html, keep, leaks, page) {
   const $ = cheerio.load(html, { decodeEntities: false });
   // 1. Remove things that would misrepresent the prospect or leak the original client.
   $('script, noscript, iframe, form, link[rel="canonical"], link[rel="alternate"], meta[property^="og:"], meta[name^="twitter:"]').remove();
-  for (const sel of C.logoSelectors || []) $(sel).replaceWith('<span style="font-weight:800;font-size:1.3rem;line-height:1.1;letter-spacing:-.01em;color:inherit">[[NAME]]</span>');
+  for (const sel of C.logoSelectors || []) $(sel).replaceWith(`<span style="font-weight:800;font-size:1.3rem;line-height:1.1;letter-spacing:-.01em;color:inherit;${C.logoStyle || ''}">[[NAME]]</span>`);
   for (const sel of C.removeSelectors || []) $(sel).remove();
   for (const pre of C.removeLinksTo || []) $(`a[href^="${pre}"]`).each((_, a) => { const li = $(a).closest('li'); (li.length && li.find('a').length === 1 ? li : $(a)).remove(); });
   for (const rx of C.removeBlocksMatching || []) {

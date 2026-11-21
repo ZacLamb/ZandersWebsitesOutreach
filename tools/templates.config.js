@@ -146,6 +146,8 @@ module.exports = {
       'data/towns.js': [],
     },
     logoSelectors: ['img[src="LOGO"]'],
+    logoStyle: 'color:#fff;padding:10px 4px;display:inline-block',
+    extraCss: '.brand,.brand:hover{text-decoration:none}',
     removeSelectors: ['link[rel="icon"]', '.sticker', 'section.trust', '.trust', '.quote-teaser', 'section:has(.quote-teaser)', 'section:has(.jim-note)', '.footer-towns', 'section:has(a[href^="/roofing/"])', 'section.reviews', '.reviews', 'a[href^="mailto:"]', '.mobile-bar .mb-quote'],
     removeLinksTo: ['/service-areas', '/roofing/', '/instant-quote', '/privacy'],
     removeBlocksMatching: ['^What areas do you (serve|cover)\\?', '^How long have you been', 'Towns served', 'years serving the', 'GAF or CertainTeed', '^Facebook$', '^Directions$', 'See the towns we serve'],
