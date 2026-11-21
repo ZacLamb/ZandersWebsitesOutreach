@@ -10,7 +10,7 @@ import { stageProspect, sendSms, moveOpportunity, addTags } from './ghl.js';
 export const COST = { sms: 0.008, site: 0.01, msg: 0.01, triage: 0.005, search: 0.035 }; // site = per-trade template, filled per lead
 export const DEFAULTS = {
   mode: 'off', dailyBudget: 5, dailyTextCap: 25, maxBotReplies: 2, zwDelayDays: 7,
-  offer: 'Revenue Generating Solutions: website build $497 one time, then $99/mo for hosting, changes and Google Business Profile setup. No contract. Optional local SEO (town and service pages added monthly) is +$199/mo.',
+  offer: 'Revenue Generating Solutions: website build $497 one time, then $99/mo for hosting, changes and Google Business Profile setup. No contract. If they want the $497 build fee waived: pay the year up front ($1,188 for 12 months at $99) and the build is free. Optional local SEO (town and service pages added monthly) is +$199/mo.',
   offerZw: "Zander's Websites: $20/mo, no setup fee, no contract. Zander is 7 and this is his first business; his dad helps him.",
 };
 const HOLIDAYS = new Set(['2026-11-26', '2026-12-25', '2027-01-01']);
