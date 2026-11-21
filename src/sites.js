@@ -15,8 +15,9 @@ export function sanitize(html) {
     .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '').replace(/javascript:/gi, '');
 }
 
-export function withBanner(html, name) {
-  const bar = `<div style="position:fixed;left:0;right:0;bottom:0;background:#111;color:#fff;font:14px system-ui,sans-serif;padding:10px 14px;text-align:center;z-index:99999">Free sample site made for ${esc(name)} by Zander's Websites. Not live on your domain. Text Zac to make it yours.</div>`;
+export function withBanner(html, name, brand = 'rgs') {
+  const by = brand === 'zw' ? "Zander's Websites" : 'Revenue Generating Solutions';
+  const bar = `<div style="position:fixed;left:0;right:0;bottom:0;background:#111;color:#fff;font:14px system-ui,sans-serif;padding:10px 14px;text-align:center;z-index:99999">Free sample site made for ${esc(name)} by ${by}. Not live on your domain yet. Reply to the text to make it yours.</div>`;
   return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, bar + '</body>') : html + bar;
 }
 
@@ -38,7 +39,7 @@ async function getTemplate(env, trade, dir, fetchImpl) {
   return html;
 }
 
-export async function generateSite(env, p, dir, fetchImpl = fetch) {
+export async function generateSite(env, p, dir, fetchImpl = fetch, brand = 'rgs') {
   const tpl = await getTemplate(env, p.trade, dir, fetchImpl);
   const digits = String(p.phone || '').replace(/\D/g, '').slice(-10);
   const pretty = digits.length === 10 ? `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}` : String(p.phone || '');
@@ -46,6 +47,6 @@ export async function generateSite(env, p, dir, fetchImpl = fetch) {
   let html = tpl; for (const t of TOKENS) html = html.split(t).join(vals[t]);
   const slug = newSlug(p.name);
   fs.mkdirSync(path.join(dir, 'sites'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'sites', `${slug}.html`), withBanner(html, p.name));
+  fs.writeFileSync(path.join(dir, 'sites', `${slug}.html`), withBanner(html, p.name, brand));
   return slug;
 }

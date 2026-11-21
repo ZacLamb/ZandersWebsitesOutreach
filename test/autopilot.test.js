@@ -54,7 +54,7 @@ function mockFetch(log) {
 function setup(over = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap-')); const log = []; const marks = {};
   let queue = [{ place_id: 'ChIJ1', name: "Joe's Roofing", phone: '(508) 555-0101', trade: 'roofing contractor', town: 'Mashpee, MA', tier: 'A', web_type: 'none', reviews: '12', rating: '4.8' }];
-  const env = { ANTHROPIC_API_KEY: 'k', GHL_TOKEN: 't', GHL_LOCATION_ID: 'L', GHL_PIPELINE_ID: 'P', GHL_STAGE_NEW_LEAD: 'S0', GHL_STAGE_TEXTED: 'S1', GHL_STAGE_RESPOND_YES: 'S2', GHL_STAGE_NOT_INTERESTED: 'S3', PUBLIC_URL: 'https://x.up.railway.app', ...over };
+  const env = { ANTHROPIC_API_KEY: 'k', GHL_TOKEN: 't', GHL_LOCATION_ID: 'L', GHL_PIPELINE_ID: 'P', GHL_STAGE_NEW_LEAD: 'S0', GHL_STAGE_TEXTED: 'S1', GHL_STAGE_RESPOND_YES: 'S2', GHL_STAGE_NOT_INTERESTED: 'S3', GHL_FROM_NUMBER_RGS: '+15085550001', GHL_FROM_NUMBER_ZW: '+15085550002', PUBLIC_URL: 'https://x.up.railway.app', ...over };
   const ap = createAutopilot({ env, dir, fetchImpl: mockFetch(log), now: () => SAT_3PM_ET, log: () => {}, deps: { nextProspect: () => queue.shift() || null, readyCount: () => 0, markState: (id, v) => (marks[id] = v), jobRunning: () => false, startFind: () => false } });
   ap._deps = { queue };
   return { ap, log, marks, dir };
@@ -113,4 +113,35 @@ test('one template per trade: a second lead of the same trade makes no new site 
   await ap.tick(); const before = log.filter((l) => l.body?.system?.includes('sample websites')).length;
   ap._deps.queue.push(second); await ap.tick();
   assert.equal(before, 1); assert.equal(log.filter((l) => l.body?.system?.includes('sample websites')).length, 1); assert.equal(ap.view().drafts.length, 2);
+});
+
+test('two brands, two numbers: RGS first, Zander a week after a no, never after STOP', async () => {
+  let clock = SAT_3PM_ET.getTime();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap2-')); const log = [];
+  const fetchImpl = mockFetch(log);
+  const queue = [{ place_id: 'ChIJ9', name: 'Bay Plumbing', phone: '(508) 555-0177', trade: 'plumber', town: 'Bourne, MA', tier: 'A', web_type: 'none' }];
+  const env = { ANTHROPIC_API_KEY: 'k', GHL_TOKEN: 't', GHL_LOCATION_ID: 'L', GHL_PIPELINE_ID: 'P', GHL_STAGE_NEW_LEAD: 'S0', GHL_FROM_NUMBER_RGS: '+1RGS', GHL_FROM_NUMBER_ZW: '+1ZW', PUBLIC_URL: 'https://x.app' };
+  const ap = createAutopilot({ env, dir, fetchImpl, now: () => new Date(clock), deps: { nextProspect: () => queue.shift() || null, readyCount: () => 0, markState() {}, jobRunning: () => false, startFind: () => false } });
+  ap.setSettings({ mode: 'auto' }); await ap.tick(); await ap.tick();
+  const sms = () => log.filter((l) => l.url.endsWith('/conversations/messages'));
+  assert.equal(sms()[0].body.fromNumber, '+1RGS');
+  // mock triage returns "price" by default; force a not_interested reply
+  const realFetch = fetchImpl;
+  await ap.handleInbound({ contactId: 'c1', text: 'not interested' });
+  const L = ap._state().leads.ChIJ9;
+  L.lastIntent = 'not_interested'; L.zwDueAt = clock + 7 * 864e5; L.needsYou = false; L.status = 'closed';
+  clock += 7 * 864e5 + 3600e3; while (new Date(clock).getUTCDay() === 0) clock += 864e5; // skip Sunday
+  ap._state().nextSendAt = 0; ap._state().pending = [];
+  await ap.tick();
+  const z = sms().at(-1); assert.equal(z.body.fromNumber, '+1ZW'); assert.match(z.body.message, /Zander/); assert.ok(!/Revenue Generating/.test(z.body.message));
+  const zsite = fs.readdirSync(path.join(dir, 'sites')).filter((f) => f.endsWith('.html')).map((f) => fs.readFileSync(path.join(dir, 'sites', f), 'utf8'));
+  assert.ok(zsite.some((h) => h.includes("Zander's Websites"))); assert.ok(zsite.some((h) => h.includes('Revenue Generating Solutions')));
+  // STOP on the Zander thread opts out for good
+  await ap.handleInbound({ contactId: 'c1', text: 'STOP' }); assert.equal(ap._state().leads.ChIJ9.status, 'opted_out');
+});
+
+test('STOP to RGS means no Zander text ever', async () => {
+  const { ap } = setup(); ap.setSettings({ mode: 'auto' }); await ap.tick(); await ap.tick();
+  await ap.handleInbound({ contactId: 'c1', text: 'STOP' });
+  const L = ap._state().leads.ChIJ1; assert.ok(!L.zwDueAt);
 });

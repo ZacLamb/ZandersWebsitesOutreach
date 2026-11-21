@@ -40,7 +40,7 @@ a{color:var(--ac)}#toast{position:fixed;bottom:16px;left:50%;transform:translate
 <div id="apToday" class="small" style="margin-top:10px"></div>
 <div id="apNeed" style="margin-top:10px"></div>
 <details style="margin-top:10px"><summary class="small mut" style="cursor:pointer">Setup checklist</summary><div id="apSetup" class="small" style="margin-top:6px"></div>
-<label class="f">What the bot may say about the offer (optional; leave empty and it never quotes a price)</label><input id="apOffer" style="width:100%" placeholder="e.g. Sites start at $500, no monthly contracts"></details>
+<label class="f">RGS offer the bot may quote</label><input id="apOffer" style="width:100%"><label class="f">Zander's Websites offer (sent a week after an RGS no / no reply, from the Zander number)</label><input id="apOfferZw" style="width:100%"></details>
 <details style="margin-top:10px"><summary class="small mut" style="cursor:pointer">Drafts waiting to send</summary><div id="apDrafts" class="small" style="margin-top:6px"></div></details>
 <details style="margin-top:10px"><summary class="small mut" style="cursor:pointer">What it did lately</summary><div id="apEvents" class="small mut" style="margin-top:6px"></div></details></div>
 
@@ -147,16 +147,16 @@ const MODES=[['off','Off'],['draft','Draft only'],['auto','Autopilot']];
 async function apPost(path,body){const r=await fetch('/api/autopilot/'+path,{method:'POST',headers:H,body:JSON.stringify(body||{})});const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);AP=j;apRender();return j}
 function apRender(){const a=AP;if(!a)return;
  $('apMode').replaceChildren(...MODES.map(([k,n])=>{const b=el('button',a.settings.mode===k?(k==='auto'?'d':'p'):'',n);b.onclick=async()=>{if(k==='auto'&&!confirm('Turn on Autopilot? It will text prospects on its own within your daily caps (Mon-Sat, 9am-6:30pm Eastern). STOP replies are honored automatically.'))return;try{await apPost('settings',{mode:k})}catch(e){toast(e.message)}};return b}));
- if(document.activeElement!==$('apBudget'))$('apBudget').value=a.settings.dailyBudget;if(document.activeElement!==$('apCap'))$('apCap').value=a.settings.dailyTextCap;if(document.activeElement!==$('apOffer'))$('apOffer').value=a.settings.offer||'';
+ if(document.activeElement!==$('apBudget'))$('apBudget').value=a.settings.dailyBudget;if(document.activeElement!==$('apCap'))$('apCap').value=a.settings.dailyTextCap;if(document.activeElement!==$('apOffer'))$('apOffer').value=a.settings.offer||'';if(document.activeElement!==$('apOfferZw'))$('apOfferZw').value=a.settings.offerZw||'';
  const p=$('apPause');p.style.display=a.paused?'block':'none';p.replaceChildren();if(a.paused){p.append(document.createTextNode('⏸ Paused: '+a.paused+' '));const b=el('button',null,'Resume');b.onclick=()=>apPost('resume');p.append(b)}
- const t=a.today;$('apToday').textContent='Today: '+t.texts+'/'+a.effCap+' texts · '+t.replies+' replies · '+t.optouts+' opt-outs · $'+t.spend.toFixed(2)+' of $'+a.settings.dailyBudget+' · '+(a.setup.inWindow?'inside send window':'outside send window (Mon–Sat 9–6:30 ET)')+' · '+Object.entries(a.counts).map(([k,v])=>v+' '+k).join(', ');
+ const t=a.today;$('apToday').textContent='Today: '+t.texts+'/'+a.effCap+' texts · '+t.replies+' replies · '+t.optouts+' opt-outs · $'+t.spend.toFixed(2)+' of $'+a.settings.dailyBudget+' · '+(a.setup.inWindow?'inside send window':'outside send window (Mon–Sat 9–6:30 ET)')+' · '+a.zwScheduled+" queued for Zander's · "+Object.entries(a.counts).map(([k,v])=>v+' '+k).join(', ');
  const n=$('apNeed');n.replaceChildren();if(a.needsYou.length)n.append(el('div','bad small','🔥 Needs you ('+a.needsYou.length+')'));
  a.needsYou.forEach(x=>{const d=el('div','lead');const m=el('div','main');m.append(el('div','t',x.name),el('div','small mut','"'+x.last+'" · '+x.intent));const l=el('a','small','Open in GHL');l.href='https://app.gohighlevel.com/v2/location/'+a.locationId+'/contacts/detail/'+x.contactId;l.target='_blank';l.rel='noopener';m.append(l);
   const b=el('button',null,'Done');b.onclick=()=>apPost('resolve',{id:x.id});d.append(m,b);n.append(d)});
- const S2=a.setup;$('apSetup').replaceChildren(...[['Anthropic API key (writes sites + texts)',S2.claude],['Public URL for sample sites',S2.publicUrl],['GHL keys + pipeline',S2.ghl],['GHL stage IDs (Texted / Respond Yes)',S2.stages],['Reply webhook secret (so replies reach the bot)',S2.webhook],['Alert contact (texts you hot leads)',S2.alerts]].map(([n,ok])=>el('div',ok?'ok':'bad',(ok?'✓ ':'✗ ')+n)));
+ const S2=a.setup;$('apSetup').replaceChildren(...[['Anthropic API key (writes sites + texts)',S2.claude],['Public URL for sample sites',S2.publicUrl],['GHL keys + pipeline',S2.ghl],['GHL stage IDs (Texted / Respond Yes)',S2.stages],['Reply webhook secret (so replies reach the bot)',S2.webhook],['Alert contact (texts you hot leads)',S2.alerts],['RGS sending number (GHL_FROM_NUMBER_RGS)',S2.numberRgs],["Zander's sending number (GHL_FROM_NUMBER_ZW)",S2.numberZw]].map(([n,ok])=>el('div',ok?'ok':'bad',(ok?'✓ ':'✗ ')+n)));
  $('apDrafts').replaceChildren(...(a.drafts.length?a.drafts.map(d=>{const x=el('div',null);x.style.marginBottom='8px';x.append(el('b',null,d.name),el('div','mut',d.msg));return x}):[el('div','mut','None yet.')]));
  $('apEvents').replaceChildren(...a.events.map(e=>el('div',null,e.at.slice(5,16).replace('T',' ')+' · '+e.text)))}
-$('apSave').onclick=async()=>{try{await apPost('settings',{dailyBudget:+$('apBudget').value,dailyTextCap:+$('apCap').value,offer:$('apOffer').value});toast('Saved')}catch(e){toast(e.message)}};
+$('apSave').onclick=async()=>{try{await apPost('settings',{dailyBudget:+$('apBudget').value,dailyTextCap:+$('apCap').value,offer:$('apOffer').value,offerZw:$('apOfferZw').value});toast('Saved')}catch(e){toast(e.message)}};
 async function apLoad(){try{AP=await (await fetch('/api/autopilot')).json();apRender()}catch{}}
 status();apLoad();setInterval(apLoad,8000);
 </script></body></html>

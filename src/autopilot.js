@@ -8,7 +8,11 @@ import { stageProspect, sendSms, moveOpportunity, addTags } from './ghl.js';
 
 // Estimated unit costs in USD (Zac's SMS rate; the rest are rough and only used for the budget guard).
 export const COST = { sms: 0.008, site: 0.01, msg: 0.01, triage: 0.005, search: 0.035 }; // site = per-trade template, filled per lead
-export const DEFAULTS = { mode: 'off', dailyBudget: 5, dailyTextCap: 25, maxBotReplies: 2, offer: '' };
+export const DEFAULTS = {
+  mode: 'off', dailyBudget: 5, dailyTextCap: 25, maxBotReplies: 2, zwDelayDays: 7,
+  offer: 'Revenue Generating Solutions: website build $497 one time, then $99/mo for hosting, changes and Google Business Profile setup. No contract. Optional local SEO (town and service pages added monthly) is +$199/mo.',
+  offerZw: "Zander's Websites: $20/mo, no setup fee, no contract. Zander is 7 and this is his first business; his dad helps him.",
+};
 const HOLIDAYS = new Set(['2026-11-26', '2026-12-25', '2027-01-01']);
 const DAY = 864e5;
 
@@ -28,6 +32,9 @@ export const segments = (m) => Math.max(1, Math.ceil(m.length / (m.length <= 160
 const digits = (p) => String(p || '').replace(/\D/g, '').slice(-10);
 
 const hook = (p) => ({ none: "doesn't have a website on its Google listing", 'social-only': 'is only on Facebook with no website', 'builder-subdomain': 'has a website that looked a bit outdated' }[p.web_type] || 'had a website that looked a bit outdated');
+export function zanderMessage(p, url) {
+  return ascii(`Hi! I'm Zander, I'm 7 and building websites is my first business (my dad helps). I made one for ${p.name}: ${url} It's $20/mo, no setup fee. Reply STOP to opt out.`);
+}
 export function templateMessage(p, url, step) {
   if (step === 1) return ascii(`Hey, just checking you saw the sample site I built for ${p.name}? ${url} Happy to tweak it, no pressure.`);
   if (step === 2) return ascii(`Last note from me, the sample for ${p.name} stays up this week: ${url} Thanks either way! Reply STOP to opt out.`);
@@ -97,11 +104,29 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
     const quiet = (x) => x.status === 'sent' && !x.replies.length;
     const done = Object.values(S.leads).find((x) => quiet(x) && x.step === 3 && t - x.lastSentAt >= 4 * DAY);
     if (done) {
-      done.status = 'no_response'; ev('info', `No response from ${done.name}; closing out`, done.id);
+      done.status = 'no_response'; done.zwDueAt = t + (S.settings.zwDelayDays * DAY); ev('info', `No response from ${done.name}; closing out (Zander's Websites follow-up scheduled)`, done.id);
       try { await moveOpportunity(env, done.oppId, stage('NO_RESPONSE'), fetchImpl); } catch {} save(); return true;
     }
     const due = Object.values(S.leads).find((x) => quiet(x) && ((x.step === 1 && t - x.lastSentAt >= 3 * DAY) || (x.step === 2 && t - x.lastSentAt >= 4 * DAY)));
     let L = due, step = due ? due.step : 0;
+    // Zander's Websites second touch: separate brand, separate number, after RGS got a no / no answer.
+    if (!L && env.GHL_FROM_NUMBER_ZW) {
+      const z = Object.values(S.leads).find((x) => x.zwDueAt && x.zwDueAt <= t && !x.zwSentAt && x.status !== 'opted_out' && x.contactId);
+      if (z) {
+        const zmsg = zanderMessage(z, z.zwUrl || z.url);
+        if (!room(segments(zmsg) * COST.sms)) return false;
+        try {
+          if (!z.zwUrl) { const slug = await generateSite(env, { name: z.name, phone: z.phone, trade: z.trade, town: z.town }, dir, fetchImpl, 'zw'); z.zwUrl = `${publicUrl()}/s/${slug}`; }
+          const m2 = zanderMessage(z, z.zwUrl);
+          await sendSms(env, z.contactId, m2, fetchImpl, env.GHL_FROM_NUMBER_ZW);
+          d.texts++; d.spend += segments(m2) * COST.sms; z.zwSentAt = t; z.brand = 'zw'; z.status = 'zw_sent'; z.botReplies = 0; z.msg = m2;
+          try { await addTags(env, z.contactId, ['zw-zander-pitch'], fetchImpl); } catch {}
+          ev('send', `Zander's Websites text to ${z.name}`, z.id);
+          S.nextSendAt = t + ((9.5 * 3600e3) / effCap()) * (0.7 + Math.random() * 0.6);
+        } catch (e) { d.errors++; ev('error', `Zander send failed for ${z.name}: ${e.message}`, z.id); }
+        save(); return true;
+      }
+    }
     if (!L) { L = Object.values(S.leads).find((x) => x.status === 'drafted'); step = 0; }
     if (!L) return false;
     const msg = step === 0 ? L.msg : templateMessage({ name: L.name }, L.url, step);
@@ -113,7 +138,7 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
         if (r.status === 'duplicate') { L.status = 'duplicate'; ev('info', `${L.name} already exists in GHL; not texting`, L.id); deps.markState(L.id, 'duplicate'); save(); return true; }
         L.contactId = r.contactId; L.oppId = r.opportunityId; S.byContact[r.contactId] = L.id; deps.markState(L.id, 'created');
       }
-      await sendSms(env, L.contactId, msg, fetchImpl);
+      await sendSms(env, L.contactId, msg, fetchImpl, env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER);
       d.texts++; d.spend += segments(msg) * COST.sms; d.errors = 0;
       L.step = step + 1; L.lastSentAt = now().getTime(); L.status = 'sent';
       if (step === 0) { try { await moveOpportunity(env, L.oppId, stage('TEXTED'), fetchImpl); } catch (e) { ev('warn', `stage move failed: ${e.message}`, L.id); } }
@@ -131,7 +156,7 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
     if (!env.ANTHROPIC_API_KEY) return { intent: 'other', reply: '' };
     try {
       const out = await askClaude(env, {
-        system: `You triage replies to a cold text from Zac, who offers local trade businesses a free sample website. Return ONLY JSON: {"intent": one of "interested","price","question","objection","not_interested","wrong_person","asks_if_bot","other","reply": string}. "reply" is a short friendly plain-ASCII text from Zac (max 220 chars, no emoji) or "" if no reply should be sent. Rules: never state any price or timeline unless it appears in OFFER below; if price is asked and OFFER is empty, reply that you'll grab the details and text right back; never promise anything not in OFFER; if they ask whether this is a bot/automated/AI, intent "asks_if_bot" and reply ""; if not_interested/wrong_person, reply "" ; keep Zac's casual local voice.\nOFFER: ${S.settings.offer || '(none)'}`,
+        system: `You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websites (Zander, age 7, with his dad Zac helping)" : 'Zac from Revenue Generating Solutions'}, who offered a local trade business a free sample website. Return ONLY JSON: {"intent": one of "interested","price","question","objection","not_interested","wrong_person","asks_if_bot","other","reply": string}. "reply" is a short friendly plain-ASCII text from Zac (max 220 chars, no emoji) or "" if no reply should be sent. Rules: never state any price or timeline unless it appears in OFFER below; if price is asked and OFFER is empty, reply that you'll grab the details and text right back; never promise anything not in OFFER; if they ask whether this is a bot/automated/AI, intent "asks_if_bot" and reply ""; if not_interested/wrong_person, reply "" ; keep the sender's casual local voice; never mention the other brand.\nOFFER: ${(L.brand === 'zw' ? S.settings.offerZw : S.settings.offer) || '(none)'}`,
         user: `Business: ${L.name}\nOur text: ${L.msg}\nTheir reply: ${text}`, maxTokens: 300,
       }, fetchImpl);
       day().spend += COST.triage;
@@ -160,6 +185,8 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
       save(); return { optout: true };
     }
     const c = await classify(L, body); L.lastIntent = c.intent;
+    if (L.brand !== 'zw' && ['not_interested', 'objection'].includes(c.intent) && !L.zwSentAt) L.zwDueAt = now().getTime() + S.settings.zwDelayDays * DAY;
+    if (['interested', 'price'].includes(c.intent)) L.zwDueAt = null;
     const hot = ['interested', 'price', 'objection', 'asks_if_bot', 'other', 'question'].includes(c.intent);
     if (c.intent === 'not_interested' || c.intent === 'wrong_person') {
       L.status = 'closed'; try { await moveOpportunity(env, L.oppId, stage('NOT_INTERESTED'), fetchImpl); } catch {}
@@ -179,7 +206,7 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
       if (p.at > t || !canReplyNow(now())) continue;
       S.pending = S.pending.filter((x) => x !== p);
       const L = S.leads[p.id]; if (!L || L.status === 'opted_out' || !room(segments(p.text) * COST.sms)) continue;
-      try { await sendSms(env, L.contactId, p.text, fetchImpl); day().spend += segments(p.text) * COST.sms; L.replies.push({ at: now().toISOString(), text: p.text, bot: true }); ev('send', `Auto-replied to ${L.name}`, L.id); }
+      try { await sendSms(env, L.contactId, p.text, fetchImpl, L.brand === 'zw' ? env.GHL_FROM_NUMBER_ZW : (env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER)); day().spend += segments(p.text) * COST.sms; L.replies.push({ at: now().toISOString(), text: p.text, bot: true }); ev('send', `Auto-replied to ${L.name}`, L.id); }
       catch (e) { ev('error', `Auto-reply failed for ${L.name}: ${e.message}`, L.id); }
       save();
     }
@@ -208,6 +235,7 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
     if (Number.isFinite(+s.dailyBudget)) n.dailyBudget = Math.min(500, Math.max(0, +s.dailyBudget));
     if (Number.isFinite(+s.dailyTextCap)) n.dailyTextCap = Math.min(1000, Math.max(0, Math.floor(+s.dailyTextCap)));
     if (typeof s.offer === 'string') n.offer = s.offer.slice(0, 600);
+    if (typeof s.offerZw === 'string') n.offerZw = s.offerZw.slice(0, 600);
     save();
   }
   const resume = () => { load().paused = null; ev('info', 'Resumed by Zac'); save(); };
@@ -220,8 +248,8 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
       locationId: env.GHL_LOCATION_ID || '', settings: S.settings, paused: S.paused, today: d, effCap: effCap(), week: week.map(([date, v]) => ({ date, ...v })),
       needsYou: leads.filter((L) => L.needsYou).map((L) => ({ id: L.id, name: L.name, phone: L.phone, contactId: L.contactId, last: L.replies.filter((r) => !r.bot).slice(-1)[0]?.text || '', intent: L.lastIntent })),
       drafts: leads.filter((L) => L.status === 'drafted').slice(0, 8).map((L) => ({ id: L.id, name: L.name, msg: L.msg, url: L.url })),
-      counts: leads.reduce((a, L) => ((a[L.status] = (a[L.status] || 0) + 1), a), {}), events: S.events.slice(0, 40),
-      setup: { claude: !!env.ANTHROPIC_API_KEY, ghl: ghlReady(), publicUrl: !!publicUrl(), stages: !!(stage('TEXTED') && stage('RESPOND_YES')), webhook: !!env.GHL_WEBHOOK_SECRET, alerts: !!env.ALERT_CONTACT_ID, inWindow: canSendNow(now()) },
+      zwScheduled: leads.filter((L) => L.zwDueAt && !L.zwSentAt).length, counts: leads.reduce((a, L) => ((a[L.status] = (a[L.status] || 0) + 1), a), {}), events: S.events.slice(0, 40),
+      setup: { claude: !!env.ANTHROPIC_API_KEY, ghl: ghlReady(), publicUrl: !!publicUrl(), stages: !!(stage('TEXTED') && stage('RESPOND_YES')), webhook: !!env.GHL_WEBHOOK_SECRET, alerts: !!env.ALERT_CONTACT_ID, numberRgs: !!(env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER), numberZw: !!env.GHL_FROM_NUMBER_ZW, inWindow: canSendNow(now()) },
     };
   }
   return { tick, handleInbound, setSettings, resume, resolve, view, _state: () => load() };
