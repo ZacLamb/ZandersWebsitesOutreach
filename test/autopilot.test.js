@@ -242,3 +242,8 @@ test('two pipelines: RGS card moves to Zander pipeline on a no, then Texted / Op
   await ap.handleInbound({ contactId: 'c1', text: 'STOP' });
   assert.equal(puts().at(-1), 'ZWP:Z7');
 });
+
+test('only real opt-outs stop everything; a rude no still goes to Zander', () => {
+  for (const t of ['STOP', 'stop.', 'Unsubscribe', 'stop texting me', "don't text me", 'remove me from your list']) assert.ok(isOptOut(t), t);
+  for (const t of ['leave me alone', 'not interested', 'no thanks', 'we are all set', 'stop by tomorrow, ill look', 'f off']) assert.ok(!isOptOut(t), t);
+});
