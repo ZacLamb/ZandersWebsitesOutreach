@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { askClaude } from './claude.js';
 import { generateSite } from './sites.js';
-import { stageProspect, sendSms, moveOpportunity, addTags } from './ghl.js';
+import { stageProspect, sendSms, moveOpportunity, addTags, removeTags } from './ghl.js';
 
 // Estimated unit costs in USD (Zac's SMS rate; the rest are rough and only used for the budget guard).
 export const COST = { sms: 0.008, site: 0.01, msg: 0.01, triage: 0.005, search: 0.035 }; // site = per-trade template, filled per lead
@@ -200,10 +200,11 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
     save(); return { intent: c.intent };
   }
 
-  async function flushPending() {
+  async function flushPending(testOnly = false) {
     load(); const t = now().getTime();
     for (const p of [...S.pending]) {
-      if (p.at > t || !canReplyNow(now())) continue;
+      if (testOnly && !S.leads[p.id]?.test) continue;
+      if (p.at > t || (!S.leads[p.id]?.test && !canReplyNow(now()))) continue;
       S.pending = S.pending.filter((x) => x !== p);
       const L = S.leads[p.id]; if (!L || L.status === 'opted_out' || !room(segments(p.text) * COST.sms)) continue;
       try { await sendSms(env, L.contactId, p.text, fetchImpl, L.brand === 'zw' ? env.GHL_FROM_NUMBER_ZW : (env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER)); day().spend += segments(p.text) * COST.sms; L.replies.push({ at: now().toISOString(), text: p.text, bot: true }); ev('send', `Auto-replied to ${L.name}`, L.id); }
@@ -216,7 +217,7 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
     if (busy) return; busy = true;
     try {
       load();
-      if (S.settings.mode === 'off' || S.paused) return;
+      if (S.settings.mode === 'off' || S.paused) { if (S.pending.some((p) => S.leads[p.id]?.test)) await flushPending(true); return; }
       await flushPending();
       // supply: keep a small buffer of drafts, top up leads with a daily search batch
       const drafted = Object.values(S.leads).filter((L) => L.status === 'drafted').length;
@@ -227,6 +228,36 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
       }
       if (S.settings.mode === 'auto' && ghlReady() && canSendNow(now()) && now().getTime() >= S.nextSendAt) await sendOne();
     } catch (e) { ev('error', `tick: ${e.message}`); save(); } finally { busy = false; }
+  }
+
+  // Live end-to-end test against Zac's own GHL contact (ALERT_CONTACT_ID). Ignores mode, caps and send window.
+  async function testSend(brand = 'rgs') {
+    load();
+    if (!env.ALERT_CONTACT_ID) throw new Error('ALERT_CONTACT_ID is not set');
+    if (!ghlReady()) throw new Error('GHL keys are not set');
+    const from = brand === 'zw' ? env.GHL_FROM_NUMBER_ZW : (env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER);
+    if (!from) throw new Error(`${brand === 'zw' ? 'GHL_FROM_NUMBER_ZW' : 'GHL_FROM_NUMBER_RGS'} is not set`);
+    await endTest(true);
+    const p = { place_id: `TEST-${now().getTime()}`, name: 'Test Roofing Co', phone: env.TEST_PHONE || '6178775608', trade: 'roofing contractor', town: 'Worcester, MA', tier: 'A', web_type: 'none', reviews: '12' };
+    const slug = await generateSite(env, p, dir, fetchImpl, brand);
+    const url = `${publicUrl()}/s/${slug}`;
+    const L = (S.leads[p.place_id] = { id: p.place_id, test: true, name: p.name, phone: p.phone, trade: p.trade, town: p.town, tier: 'A', brand, slug, url, status: 'sent', step: 1, replies: [], botReplies: 0, contactId: env.ALERT_CONTACT_ID, created: now().toISOString(), lastSentAt: now().getTime() });
+    L.msg = brand === 'zw' ? zanderMessage(p, url) : await writeMessage(p, url);
+    await addTags(env, L.contactId, ['zw-autopilot'], fetchImpl);
+    await sendSms(env, L.contactId, L.msg, fetchImpl, from);
+    S.byContact[L.contactId] = L.id;
+    ev('test', `TEST ${brand === 'zw' ? "Zander's" : 'RGS'} text sent to your phone: "${L.msg}"`, L.id);
+    save(); return { sent: L.msg, url };
+  }
+  async function endTest(quiet = false) {
+    load();
+    const tests = Object.values(S.leads).filter((L) => L.test);
+    for (const L of tests) { if (S.byContact[L.contactId] === L.id) delete S.byContact[L.contactId]; delete S.leads[L.id]; }
+    S.pending = S.pending.filter((p) => S.leads[p.id]);
+    if (tests.length && env.ALERT_CONTACT_ID) { try { await removeTags(env, env.ALERT_CONTACT_ID, ['zw-autopilot', 'zw-hot', 'zw-optout'], fetchImpl); } catch (e) { ev('warn', `could not remove test tags: ${e.message}`); } }
+    S.optOut = S.optOut.filter((ph) => !tests.some((L) => L.phone === ph));
+    if (tests.length && !quiet) ev('test', 'Test ended; your contact is back to normal');
+    save(); return { ended: tests.length };
   }
 
   function setSettings(s) {
@@ -248,9 +279,9 @@ export function createAutopilot({ env = process.env, dir, fetchImpl = fetch, now
       locationId: env.GHL_LOCATION_ID || '', settings: S.settings, paused: S.paused, today: d, effCap: effCap(), week: week.map(([date, v]) => ({ date, ...v })),
       needsYou: leads.filter((L) => L.needsYou).map((L) => ({ id: L.id, name: L.name, phone: L.phone, contactId: L.contactId, last: L.replies.filter((r) => !r.bot).slice(-1)[0]?.text || '', intent: L.lastIntent })),
       drafts: leads.filter((L) => L.status === 'drafted').slice(0, 8).map((L) => ({ id: L.id, name: L.name, msg: L.msg, url: L.url })),
-      zwScheduled: leads.filter((L) => L.zwDueAt && !L.zwSentAt).length, counts: leads.reduce((a, L) => ((a[L.status] = (a[L.status] || 0) + 1), a), {}), events: S.events.slice(0, 40),
+      testActive: leads.some((L) => L.test), testLead: (leads.find((L) => L.test) || null) && (({ msg, url, replies, lastIntent, brand }) => ({ msg, url, replies, lastIntent, brand }))(leads.find((L) => L.test)), zwScheduled: leads.filter((L) => L.zwDueAt && !L.zwSentAt).length, counts: leads.reduce((a, L) => ((a[L.status] = (a[L.status] || 0) + 1), a), {}), events: S.events.slice(0, 40),
       setup: { claude: !!env.ANTHROPIC_API_KEY, ghl: ghlReady(), publicUrl: !!publicUrl(), stages: !!(stage('TEXTED') && stage('RESPOND_YES')), webhook: !!env.GHL_WEBHOOK_SECRET, alerts: !!env.ALERT_CONTACT_ID, numberRgs: !!(env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER), numberZw: !!env.GHL_FROM_NUMBER_ZW, inWindow: canSendNow(now()) },
     };
   }
-  return { tick, handleInbound, setSettings, resume, resolve, view, _state: () => load() };
+  return { tick, handleInbound, setSettings, resume, resolve, view, testSend, endTest, _state: () => load() };
 }

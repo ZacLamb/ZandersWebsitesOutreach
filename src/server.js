@@ -112,7 +112,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, pageHeaders); return res.end(html);
     }
     const f = path.join(DATA_DIR, 'sites', `${slug}.html`);
-    if (sub || !fs.existsSync(f)) return send(res, 404, 'Not found', 'text/plain');
+    if ((sub && sub !== '/') || !fs.existsSync(f)) return send(res, 404, 'Not found', 'text/plain');
     res.writeHead(200, pageHeaders); return res.end(fs.readFileSync(f));
   }
   const dm = url.pathname.match(/^\/demo\/([a-z0-9-]{2,40})(\/.*)?$/); // public preview of a template with made-up details
@@ -167,6 +167,8 @@ const server = http.createServer(async (req, res) => {
         if (url.pathname.endsWith('/settings')) autopilot.setSettings(o);
         else if (url.pathname.endsWith('/resume')) autopilot.resume();
         else if (url.pathname.endsWith('/resolve')) autopilot.resolve(String(o.id || ''));
+        else if (url.pathname.endsWith('/test')) { try { await autopilot.testSend(o.brand === 'zw' ? 'zw' : 'rgs'); } catch (e) { return send(res, 400, { error: e.message }); } }
+        else if (url.pathname.endsWith('/test-end')) await autopilot.endTest();
         else return send(res, 404, { error: 'not found' });
         return send(res, 200, autopilot.view());
       }

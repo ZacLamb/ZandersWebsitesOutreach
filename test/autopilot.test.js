@@ -168,3 +168,19 @@ test('every built template renders clean for a sample prospect', async () => {
   assert.equal(pickTemplate('general contractor', 'Worcester, MA')?.id, 'contractor-a');
   assert.equal(pickTemplate('landscaper', 'Falmouth, MA'), null, 'never in the original client\'s towns');
 });
+
+test('phone test: texts Zac from the brand number, bot replies even when Off, End test cleans up', async () => {
+  const { ap, log } = setup({ ALERT_CONTACT_ID: 'zac1' });
+  const r = await ap.testSend('rgs');
+  const sms = log.filter((l) => l.url.endsWith('/conversations/messages'));
+  assert.equal(sms.length, 1); assert.equal(sms[0].body.contactId, 'zac1'); assert.equal(sms[0].body.fromNumber, '+15085550001'); assert.ok(r.url.includes('/s/'));
+  assert.ok(log.some((l) => l.url.includes('/contacts/zac1/tags') && l.method === 'POST'));
+  await ap.handleInbound({ contactId: 'zac1', text: 'how much?' });
+  ap._state().pending.forEach((p) => (p.at = 0));
+  await ap.tick(); // mode is off, but test replies still go out
+  const after = log.filter((l) => l.url.endsWith('/conversations/messages'));
+  assert.ok(after.length >= 2);
+  await ap.endTest();
+  assert.equal(ap.view().testActive, false); assert.ok(log.some((l) => l.url.includes('/contacts/zac1/tags') && l.method === 'DELETE'));
+  assert.deepEqual(await ap.handleInbound({ contactId: 'zac1', text: 'hi' }), { ignored: true });
+});

@@ -64,3 +64,4 @@ export const sendSms = (env, contactId, message, fetchImpl = fetch, fromNumber =
 export const moveOpportunity = (env, oppId, stageId, fetchImpl = fetch) =>
   stageId && oppId ? call(env, 'PUT', `/opportunities/${oppId}`, { pipelineStageId: stageId, pipelineId: env.GHL_PIPELINE_ID }, fetchImpl) : null;
 export const addTags = (env, contactId, tags, fetchImpl = fetch) => call(env, 'POST', `/contacts/${contactId}/tags`, { tags }, fetchImpl);
+export const removeTags = (env, contactId, tags, fetchImpl = fetch) => call(env, 'DELETE', `/contacts/${contactId}/tags`, { tags }, fetchImpl);
