@@ -71,6 +71,7 @@ function transform(html, keep, leaks, page) {
   // 1. Remove things that would misrepresent the prospect or leak the original client.
   $('script, noscript, iframe, form, link[rel="canonical"], link[rel="alternate"], meta[property^="og:"], meta[name^="twitter:"]').remove();
   for (const sel of C.removeSelectors || []) $(sel).remove();
+  for (const pre of C.removeLinksTo || []) $(`a[href^="${pre}"]`).each((_, a) => { const li = $(a).closest('li'); (li.length && li.find('a').length === 1 ? li : $(a)).remove(); });
   for (const rx of C.removeBlocksMatching || []) {
     const re = new RegExp(rx, 'i');
     // remove the matching element, or its nearest small item wrapper (never a whole section)
@@ -106,6 +107,8 @@ function transform(html, keep, leaks, page) {
   });
   $('style').each((_, el) => { $(el).html(($(el).html() || '').replace(/url\((['"]?)\/(?!\/)/g, 'url($1[[ASSET]]/')); });
   $('head').prepend('<meta name="robots" content="noindex, nofollow">');
+  // scripts are stripped, so force scroll-reveal content visible; plus any per-template CSS fixes
+  $('head').append(`<style>[class*="reveal"],[class*="reveal"]>*,[data-aos],.fade-in,.animate-on-scroll{opacity:1!important;transform:none!important;visibility:visible!important}${C.extraCss || ''}</style>`);
   let out = $.html();
   // 4. Leak check against the original client's identity.
   for (const term of C.leakTerms || []) {
