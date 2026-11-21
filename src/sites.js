@@ -53,8 +53,9 @@ export function loadTemplates() {
 }
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
 export function pickTemplate(trade, town) {
-  const city = norm(String(town || '').split(',')[0]);
-  const ok = loadTemplates().filter((t) => (t.trades || []).includes(trade) && !(t.avoidTowns || []).some((a) => norm(a) === city));
+  const [c, st = ''] = String(town || '').split(',').map((x) => x.trim());
+  const city = norm(c);
+  const ok = loadTemplates().filter((t) => (t.trades || []).includes(trade) && !(t.avoidTowns || []).some((a) => norm(a) === city) && (!t.states || t.states.includes(st.toUpperCase())));
   return ok.length ? ok[Math.floor(Math.random() * ok.length)] : null;
 }
 export function fillTokens(html, d) {

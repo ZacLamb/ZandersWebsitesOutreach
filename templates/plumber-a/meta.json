@@ -1,0 +1,39 @@
+{
+  "id": "plumber-a",
+  "repo": "massplumber",
+  "trades": [
+    "plumber",
+    "HVAC contractor"
+  ],
+  "avoidTowns": [
+    "Bridgewater",
+    "East Bridgewater",
+    "West Bridgewater",
+    "Middleboro",
+    "Middleborough",
+    "Taunton",
+    "Brockton",
+    "Whitman",
+    "Lakeville",
+    "Plympton",
+    "Berkley",
+    "Halifax",
+    "Raynham"
+  ],
+  "pages": [
+    "/",
+    "/about",
+    "/contact",
+    "/services",
+    "/faq",
+    "/services/emergency-plumbing",
+    "/services/heating-repair",
+    "/services/water-heater-replacement",
+    "/services/drain-cleaning",
+    "/services/boiler-service",
+    "/services/oil-burner-service",
+    "/services/plumbing-repair",
+    "/services/sump-pump-installation"
+  ],
+  "builtAt": "2026-11-21T17:40:01.414Z"
+}

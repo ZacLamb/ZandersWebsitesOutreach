@@ -53,7 +53,7 @@ function mockFetch(log) {
 
 function setup(over = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap-')); const log = []; const marks = {};
-  let queue = [{ place_id: 'ChIJ1', name: "Joe's Roofing", phone: '(508) 555-0101', trade: 'roofing contractor', town: 'Mashpee, MA', tier: 'A', web_type: 'none', reviews: '12', rating: '4.8' }];
+  let queue = [{ place_id: 'ChIJ1', name: "Joe's Roofing", phone: '(508) 555-0101', trade: 'pest control', town: 'Mashpee, MA', tier: 'A', web_type: 'none', reviews: '12', rating: '4.8' }];
   const env = { ANTHROPIC_API_KEY: 'k', GHL_TOKEN: 't', GHL_LOCATION_ID: 'L', GHL_PIPELINE_ID: 'P', GHL_STAGE_NEW_LEAD: 'S0', GHL_STAGE_TEXTED: 'S1', GHL_STAGE_RESPOND_YES: 'S2', GHL_STAGE_NOT_INTERESTED: 'S3', GHL_FROM_NUMBER_RGS: '+15085550001', GHL_FROM_NUMBER_ZW: '+15085550002', PUBLIC_URL: 'https://x.up.railway.app', ...over };
   const ap = createAutopilot({ env, dir, fetchImpl: mockFetch(log), now: () => SAT_3PM_ET, log: () => {}, deps: { nextProspect: () => queue.shift() || null, readyCount: () => 0, markState: (id, v) => (marks[id] = v), jobRunning: () => false, startFind: () => false } });
   ap._deps = { queue };
@@ -109,7 +109,7 @@ test('unknown contacts (not ours) are ignored', async () => {
 
 test('one template per trade: a second lead of the same trade makes no new site call', async () => {
   const { ap, log } = setup(); ap.setSettings({ mode: 'draft' });
-  const second = { place_id: 'ChIJ2', name: 'Cape Roof Co', phone: '(508) 555-0199', trade: 'roofing contractor', town: 'Falmouth, MA', tier: 'A', web_type: 'none' };
+  const second = { place_id: 'ChIJ2', name: 'Cape Roof Co', phone: '(508) 555-0199', trade: 'pest control', town: 'Falmouth, MA', tier: 'A', web_type: 'none' };
   await ap.tick(); const before = log.filter((l) => l.body?.system?.includes('sample websites')).length;
   ap._deps.queue.push(second); await ap.tick();
   assert.equal(before, 1); assert.equal(log.filter((l) => l.body?.system?.includes('sample websites')).length, 1); assert.equal(ap.view().drafts.length, 2);
@@ -119,7 +119,7 @@ test('two brands, two numbers: RGS first, Zander a week after a no, never after 
   let clock = SAT_3PM_ET.getTime();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap2-')); const log = [];
   const fetchImpl = mockFetch(log);
-  const queue = [{ place_id: 'ChIJ9', name: 'Bay Plumbing', phone: '(508) 555-0177', trade: 'plumber', town: 'Bourne, MA', tier: 'A', web_type: 'none' }];
+  const queue = [{ place_id: 'ChIJ9', name: 'Bay Plumbing', phone: '(508) 555-0177', trade: 'pest control', town: 'Bourne, MA', tier: 'A', web_type: 'none' }];
   const env = { ANTHROPIC_API_KEY: 'k', GHL_TOKEN: 't', GHL_LOCATION_ID: 'L', GHL_PIPELINE_ID: 'P', GHL_STAGE_NEW_LEAD: 'S0', GHL_FROM_NUMBER_RGS: '+1RGS', GHL_FROM_NUMBER_ZW: '+1ZW', PUBLIC_URL: 'https://x.app' };
   const ap = createAutopilot({ env, dir, fetchImpl, now: () => new Date(clock), deps: { nextProspect: () => queue.shift() || null, readyCount: () => 0, markState() {}, jobRunning: () => false, startFind: () => false } });
   ap.setSettings({ mode: 'auto' }); await ap.tick(); await ap.tick();
@@ -150,8 +150,21 @@ test('templates: picks by trade, skips the original client\'s towns, fills token
   const { pickTemplate, renderTemplatePage } = await import('../src/sites.js');
   assert.equal(pickTemplate('electrician', 'Falmouth, MA')?.id, 'electrician-a');
   assert.equal(pickTemplate('electrician', 'Marion, MA'), null);
-  assert.equal(pickTemplate('plumber', 'Falmouth, MA'), null);
+  assert.equal(pickTemplate('pest control', 'Falmouth, MA'), null);
   const html = renderTemplatePage({ tpl: 'electrician-a', name: 'Bay & Co', phone: '5085550100', town: 'Falmouth, MA', brand: 'rgs' }, '/', 'bay-co-abc123');
   assert.match(html, /Bay &amp; Co/); assert.match(html, /\(508\) 555-0100/); assert.ok(!html.includes('[['));
   assert.ok(!/Matt Farrell|Marion|916-1980/i.test(html));
+});
+
+test('every built template renders clean for a sample prospect', async () => {
+  const { loadTemplates, renderTemplatePage, pickTemplate } = await import('../src/sites.js');
+  const ids = loadTemplates().map((t) => t.id).sort();
+  assert.deepEqual(ids, ['contractor-a', 'electrician-a', 'landscaper-a', 'plumber-a', 'roofer-a']);
+  for (const t of loadTemplates()) for (const p of t.pages) {
+    const html = renderTemplatePage({ tpl: t.id, name: 'Acme Co', phone: '8605550100', town: 'Hartford, CT', brand: 'rgs' }, p, 'acme-co-abc123');
+    assert.ok(html, `${t.id} ${p}`); assert.ok(!html.includes('[['), `${t.id} ${p} has unfilled token`);
+  }
+  assert.equal(pickTemplate('general contractor', 'Hartford, CT'), null, 'MA-only template not used in CT');
+  assert.equal(pickTemplate('general contractor', 'Worcester, MA')?.id, 'contractor-a');
+  assert.equal(pickTemplate('landscaper', 'Falmouth, MA'), null, 'never in the original client\'s towns');
 });

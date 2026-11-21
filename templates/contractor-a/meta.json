@@ -1,0 +1,53 @@
+{
+  "id": "contractor-a",
+  "repo": "ksconstructionma",
+  "trades": [
+    "general contractor",
+    "home remodeling",
+    "carpenter",
+    "deck builder",
+    "siding contractor",
+    "window installer",
+    "drywall contractor"
+  ],
+  "states": [
+    "MA"
+  ],
+  "avoidTowns": [
+    "North Attleborough",
+    "North Attleboro",
+    "Attleboro",
+    "Plainville",
+    "Mansfield",
+    "Foxborough",
+    "Wrentham",
+    "Norton",
+    "Seekonk",
+    "Rehoboth",
+    "Franklin",
+    "Norfolk",
+    "Easton",
+    "Sharon",
+    "Walpole",
+    "Bellingham",
+    "Taunton"
+  ],
+  "pages": [
+    "/",
+    "/about",
+    "/contact",
+    "/services",
+    "/services/adus",
+    "/services/general-contracting",
+    "/services/remodeling",
+    "/services/kitchen-cabinets",
+    "/services/finish-carpentry",
+    "/services/custom-closets",
+    "/services/tile",
+    "/services/decks",
+    "/services/siding",
+    "/services/windows",
+    "/services/painting"
+  ],
+  "builtAt": "2026-11-21T17:40:02.366Z"
+}

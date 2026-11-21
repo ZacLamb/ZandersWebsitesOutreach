@@ -1,0 +1,44 @@
+{
+  "id": "landscaper-a",
+  "repo": "Shea-Land-Management",
+  "trades": [
+    "landscaper",
+    "tree service",
+    "hardscaping",
+    "irrigation",
+    "snow plowing",
+    "excavation contractor",
+    "masonry contractor",
+    "fence contractor"
+  ],
+  "avoidTowns": [
+    "Sandwich",
+    "East Sandwich",
+    "Bourne",
+    "Falmouth",
+    "Mashpee",
+    "Barnstable",
+    "Hyannis",
+    "Yarmouth",
+    "Dennis",
+    "Harwich",
+    "Brewster",
+    "Chatham",
+    "Orleans",
+    "Eastham",
+    "Wellfleet",
+    "Truro",
+    "Provincetown"
+  ],
+  "pages": [
+    "/",
+    "/about",
+    "/contact",
+    "/services",
+    "/services/hardscaping-masonry",
+    "/services/land-clearing-site-work",
+    "/services/landscaping",
+    "/services/tree-services"
+  ],
+  "builtAt": "2026-11-21T17:40:54.605Z"
+}

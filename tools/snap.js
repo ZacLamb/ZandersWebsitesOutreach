@@ -27,7 +27,7 @@ Module._load = function (req, parent, isMain) {
     for (const [rel, val] of Object.entries(ov)) {
       if (file === path.join(${JSON.stringify(REPO)}, rel)) {
         if (Array.isArray(val)) return val;
-        if (val && typeof val === 'object' && out && typeof out === 'object' && !Array.isArray(out)) return Object.assign({}, out, val);
+        if (val && typeof val === 'object' && out && typeof out === 'object' && !Array.isArray(out)) { const m = Object.assign({}, out); for (const [k, v] of Object.entries(val)) m[k] = (v && typeof v === 'object' && !Array.isArray(v) && out[k] && typeof out[k] === 'object' && !Array.isArray(out[k])) ? Object.assign({}, out[k], v) : v; return m; }
         return val;
       }
     }
@@ -41,6 +41,7 @@ const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 async function main() {
   const child = spawn(process.execPath, ['-r', hookFile, C.entry || 'server.js'], { cwd: REPO, env: { ...process.env, PORT: String(PORT), NODE_ENV: 'production' }, stdio: ['ignore', 'pipe', 'pipe'] });
   let log = ''; child.stdout.on('data', (d) => (log += d)); child.stderr.on('data', (d) => (log += d));
+  child.on('exit', (c) => { if (c) console.error('server exited', c, log.slice(-1500)); });
   try {
     for (let i = 0; i < 40; i++) { try { await fetch(`http://127.0.0.1:${PORT}/`); break; } catch { await sleep(250); } }
     fs.rmSync(OUT, { recursive: true, force: true });
@@ -58,29 +59,30 @@ async function main() {
     }
     // static assets
     const pub = path.join(REPO, C.publicDir || 'public');
-    if (fs.existsSync(pub)) fs.cpSync(pub, path.join(OUT, 'assets'), { recursive: true, filter: (s) => !/\.(mp4|mov|zip|psd)$/i.test(s) && !(C.skipAssets || []).some((r) => new RegExp(r).test(s)) });
-    fs.writeFileSync(path.join(OUT, 'meta.json'), JSON.stringify({ id, repo: C.repo, trades: C.trades, avoidTowns: C.avoidTowns, pages: [...keep], builtAt: new Date().toISOString() }, null, 2));
+    if (fs.existsSync(pub)) fs.cpSync(pub, path.join(OUT, 'assets'), { recursive: true, filter: (s) => !/\.(mp4|mov|zip|psd|jpe?g|png|webp)$/i.test(s) && !(C.skipAssets || []).some((r) => new RegExp(r).test(s)) });
+    fs.writeFileSync(path.join(OUT, 'meta.json'), JSON.stringify({ id, repo: C.repo, trades: C.trades, states: C.states, avoidTowns: C.avoidTowns, pages: [...keep], builtAt: new Date().toISOString() }, null, 2));
     if (leaks.length) { console.error('LEAKS:\n' + [...new Set(leaks)].slice(0, 60).join('\n')); process.exitCode = 2; }
     else console.log(`ok ${id}: ${pages.length} pages`);
   } finally { child.kill(); fs.rmSync(hookFile, { force: true }); }
-  if (process.exitCode && log) console.error(log.slice(-800));
+  if (log && (process.exitCode || process.env.DEBUG)) console.error(log.slice(-1500));
 }
 
 function transform(html, keep, leaks, page) {
   const $ = cheerio.load(html, { decodeEntities: false });
   // 1. Remove things that would misrepresent the prospect or leak the original client.
   $('script, noscript, iframe, form, link[rel="canonical"], link[rel="alternate"], meta[property^="og:"], meta[name^="twitter:"]').remove();
+  for (const sel of C.logoSelectors || []) $(sel).replaceWith('<span style="font-weight:800;font-size:1.3rem;line-height:1.1;letter-spacing:-.01em;color:inherit">[[NAME]]</span>');
   for (const sel of C.removeSelectors || []) $(sel).remove();
   for (const pre of C.removeLinksTo || []) $(`a[href^="${pre}"]`).each((_, a) => { const li = $(a).closest('li'); (li.length && li.find('a').length === 1 ? li : $(a)).remove(); });
   for (const rx of C.removeBlocksMatching || []) {
     const re = new RegExp(rx, 'i');
     // remove the matching element, or its nearest small item wrapper (never a whole section)
-    $('h1,h2,h3,h4,h5,p,span,div,li,strong,a').each((_, el) => {
+    $('h1,h2,h3,h4,h5,p,span,div,li,strong,a,summary,dt').each((_, el) => {
       if (!$(el).parent().length) return;
       const t = $(el).text().trim();
       if (t.length >= 300 || !re.test(t)) return;
       if ($(el).children().filter((_, c) => re.test($(c).text())).length) return; // let the innermost match decide
-      const item = $(el).closest(C.itemSelector || 'li, [class*="__item"], [class*="-item"], [class*="badge"], [class*="chip"]');
+      const item = $(el).closest(C.itemSelector || 'li, details, [class*="__item"], [class*="-item"], [class*="badge"], [class*="chip"]');
       (item.length && item.text().trim().length < 400 ? item : $(el)).remove();
     });
   }
@@ -101,6 +103,16 @@ function transform(html, keep, leaks, page) {
     const p = u.pathname.replace(/\/$/, '') || '/';
     $(el).attr('href', keep.has(p) ? (p === '/' ? './' : p.replace(/^\//, '')) + (u.hash || '') : 'contact');
   });
+  if (C.imgMap) $('img, source').each((_, el) => {
+    const m = /^\/img\/([a-z0-9-]+?)-\d+\.webp$/.exec($(el).attr('src') || '');
+    if (m && C.imgMap[m[1]]) { $(el).attr('src', C.imgMap[m[1]]); $(el).removeAttr('srcset'); $(el).removeAttr('sizes'); }
+    else if (m) $(el).remove();
+  });
+  $('img[src=""]').remove();
+  for (const [rx, to] of C.urlRewrites || []) {
+    const re = new RegExp(rx);
+    $('[src],[style]').each((_, el) => { for (const a of ['src', 'style']) { const v = $(el).attr(a); if (v && re.test(v)) $(el).attr(a, v.replace(new RegExp(rx, 'g'), to)); } $(el).removeAttr('srcset'); });
+  }
   $('[src],[href],[srcset]').each((_, el) => {
     for (const a of ['src', 'href']) { const v = $(el).attr(a); if (v && /^\/(?!\/)/.test(v) && /\.\w{2,5}(\?|$)/.test(v)) $(el).attr(a, '[[ASSET]]' + v); }
     const ss = $(el).attr('srcset'); if (ss) $(el).attr('srcset', ss.replace(/(^|,\s*)\/(?!\/)/g, '$1[[ASSET]]/'));
@@ -118,4 +130,4 @@ function transform(html, keep, leaks, page) {
   }
   return out;
 }
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => { console.error(e.message); process.exit(1); });
