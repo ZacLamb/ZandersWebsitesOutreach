@@ -180,10 +180,6 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
   async function draftOne() {
     load();
     if (!env.ANTHROPIC_API_KEY || !publicUrl()) return false;
-    if ((S.msgVersion || 1) < 2) { // offer split test + customer-first copy: rewrite queued drafts
-      for (const x of Object.values(S.leads)) if (x.status === 'drafted' && !x.test) { x.variant ||= nextVariant(); x.why = ''; x.writes = 0; }
-      S.msgVersion = 2; save();
-    }
     // refresh drafts written before personalization so what you review is what goes out
     const stale = Object.values(S.leads).find((x) => x.status === 'drafted' && !x.test && (!x.researched || (!x.why && (x.writes || 0) < 4)));
     if (stale) {
@@ -374,6 +370,10 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
       await pollPayments();
       if (S.settings.mode === 'off' || S.paused) { if (S.pending.some((p) => S.leads[p.id]?.test)) await flushPending(true); return; }
       await flushPending();
+      if ((S.msgVersion || 1) < 2) { // offer split test + customer-first copy: rewrite queued drafts
+        for (const x of Object.values(S.leads)) if (x.status === 'drafted' && !x.test) { x.variant ||= nextVariant(); x.why = ''; x.writes = 0; }
+        S.msgVersion = 2; save();
+      }
       // supply: keep a small buffer of drafts, top up leads with a daily search batch
       const drafted = Object.values(S.leads).filter((L) => L.status === 'drafted').length;
       const cap = effCap(), d = day();
