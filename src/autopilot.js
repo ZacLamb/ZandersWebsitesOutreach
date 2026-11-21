@@ -60,16 +60,19 @@ export function templateMessage(p, url, step) {
 }
 export const linkMessage = (p, url, brand) => ascii(brand === 'zw'
   ? `Yay! Here it is: ${url} I made it for ${p.name}. Tell me what you think!`
-  : `I actually put one together for ${p.name} already: ${url} Let me know what you think! -Zac`);
+  : `Came across ${p.name} on Google and didn't see a site, so I put one together for you already: ${url} Let me know what you think! -Zac`);
 const SKIP_LINK = new Set(['not_interested', 'wrong_person', 'asks_if_bot']);
 
 const VOICE = `Zac's texting style: casual, plain words, short sentences, sounds like a local contractor texting another contractor. No marketing language.`;
 
 // First-text style split test (built from Zac's own reply data: short + a question wins).
 export const OPENERS = {
-  ask: { label: 'Question only', how: 'End with the question. Nothing after it except optionally "-Zac".' },
-  tease: { label: 'Question + tease', how: 'After the question, add a short mysterious tease that he made something for them, WITHOUT saying what it is or that it is a website (e.g. "Put something together for you if not", "Made you something, want to see?").' },
-  local: { label: 'Question + local', how: 'After the question, add that he is local, in very few words (e.g. "I\'m local, figured I\'d ask"). Never say he lives anywhere specific.' },
+  ask: { label: 'Direct question (Zac classic)', how: 'Zac\'s proven format: short greeting, a few words on how he came across them, then "do you guys have a website?". e.g. "Hey Mike! Came across Joe\'s Roofing on Google, do you guys have a website?"' },
+  rightnum: { label: 'Right number check', how: 'Pattern interrupt: only ask if this is the right number for the business, nothing else (people almost always answer). e.g. "Hey, is this the right number for Cape Tile?" or "Is this Mike from Joe\'s Roofing?"' },
+  whohandles: { label: 'Who handles it', how: 'Ask who handles their website, assuming nothing. e.g. "Quick one, who handles the website for Fisher Electric?" or "Morning! Who takes care of the online stuff for Cape Tile?"' },
+  showwork: { label: 'Where do they see your work', how: 'Open on one true, specific detail from their reviews in a few words, then ask where people go to see their work. e.g. "41 five-star reviews is no joke. Where do you send people who want to see your work?"' },
+  headsup: { label: 'Helpful heads-up', how: 'Give-first: a short, true heads-up about their Google listing or site from the research, then a question. e.g. "Heads up, Cape Tile doesn\'t have a website on Google, so searches go to whoever does. Was that on purpose?" or "Morning Scott, your site isn\'t loading on phones, did you know?"' },
+  proof: { label: 'Local proof', how: 'Light social proof, then the question. e.g. "Hey! I\'ve been helping a few trade guys around the Cape get more calls off Google. Do you guys have a website?" Keep it vague (no client names, no numbers).' },
 };
 // Offer split test (quoted only when they ask about price; never in the first text). Each RGS lead gets one variant; Metrics shows replies and sales per variant.
 export const VARIANTS = {
@@ -141,13 +144,12 @@ These are real first texts of Zac's that got replies:
 "Hey Damon, do you guys have a website by chance? I build them for the trades, figured I'd ask"
 From 2,000 of his texts: under 120 characters got 47% replies, over 300 got 9%. Asking them a direct question ("do you have a website?") got 35%.
 
-Format:
-1) Greeting: "Hey NAME!" or "Morning NAME!" (it is currently ${greet()} where they are). Use the owner's first name ONLY if two or more reviews name the same first name and it is clearly the owner; otherwise just "Hey!" / "Morning!" with no name.
-2) A few words on how he came across them (e.g. "came across BUSINESS on Google", "saw BUSINESS on Google Maps"). Use a short form of the business name.
-3) ONE question about THEM that is easy and natural to answer, picked from the research: no website on Google -> "do you guys have a website?"; Facebook page only -> "is the Facebook page the only site you guys have?"; site broken / not loading / not secure / bad on phones -> a short heads-up plus question (e.g. "did you know your site isn't loading on phones?").
-4) ${(OPENERS[p.opener] || OPENERS.ask).how}
+Use THIS opener framework for this lead (do not fall back to another one):
+${(OPENERS[p.opener] || OPENERS.ask).how}
 
-Hard rules: 50-150 characters total. No price, cost, money, "free", offers, contracts or guarantees. No link or URL. Do not explain what Zac does or sell anything. Do not compliment their reviews or describe their business back to them. Plain ASCII, no emoji. Never invent facts.
+Make it sound like a real person texting from his phone, and vary it: do NOT always start with "Hey NAME! Came across". Greeting is optional; if you greet, it is currently ${greet()} where they are. Use the owner's first name ONLY if two or more reviews name the same first name and it is clearly the owner. Use a short form of the business name. You may end with "-Zac" or not. It must end with (or contain) ONE easy question they will want to answer.
+
+Hard rules: 35-150 characters total. No price, cost, money, "free", offers, contracts or guarantees. No link or URL. Do not explain what Zac does or sell anything. Do not compliment their reviews or describe their business back to them. Plain ASCII, no emoji. Never invent facts.
 
 Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 words max"}`,
         user: brief(p, facts), maxTokens: 2500,
@@ -186,10 +188,16 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     L.msg = r.text; L.why = r.why; L.researched = true; L.writes = (L.writes || 0) + 1; L.angle = angleOf(L);
   }
 
+  // Rotate openers evenly; once every opener has 20+ sends, give the best reply rate half the traffic.
   function nextOpener() {
-    const n = Object.fromEntries(Object.keys(OPENERS).map((k) => [k, 0]));
-    for (const L of Object.values(S.leads)) if (n[L.opener] != null) n[L.opener]++;
-    return Object.keys(n).sort((a, b) => n[a] - n[b])[0];
+    const st = Object.fromEntries(Object.keys(OPENERS).map((k) => [k, { n: 0, sent: 0, rep: 0 }]));
+    for (const L of Object.values(S.leads)) {
+      const x = st[L.opener]; if (!x) continue; x.n++;
+      if (L.step >= 1) { x.sent++; if (L.replies.some((r) => !r.bot && !r.me && !isOptOut(r.text))) x.rep++; }
+    }
+    const keys = Object.keys(st);
+    if (keys.every((k) => st[k].sent >= 20) && Math.random() < 0.5) return keys.sort((a, b) => st[b].rep / st[b].sent - st[a].rep / st[a].sent)[0];
+    return keys.sort((a, b) => st[a].n - st[b].n)[0];
   }
   function nextVariant() {
     const n = Object.fromEntries(Object.keys(VARIANTS).map((k) => [k, 0]));
@@ -284,7 +292,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     if (!env.ANTHROPIC_API_KEY) return { intent: 'other', reply: '' };
     try {
       const out = await askClaude(env, {
-        system: `IMPORTANT: our first text usually asked them a question like "do you guys have a website?". Answers to that question such as "no", "nope", "not yet", "we don't", "no why?" or "yes I do" are NOT rejections: classify them as "interested" (an opening, the sample link goes out next). Only clear rejections ("not interested", "all set", "don't need one", "leave me alone") are "not_interested".
+        system: `IMPORTANT: our first text asked them a simple question, like "do you guys have a website?", "is this the right number for X?", "who handles your website?" or "where do you send people to see your work?". Plain answers to that question such as "yes", "no", "nope", "not yet", "we don't", "me", "who's asking?", "Facebook", "why?" or "yes I do" are NOT rejections: classify them as "interested" (an opening, the sample link goes out next). Only clear rejections ("not interested", "all set", "don't need one", "leave me alone") are "not_interested".
 You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websites (Zander, age 7, with his dad Zac helping)" : 'Zac from Revenue Generating Solutions'}, who offered a local trade business a free sample website. Return ONLY JSON: {"intent": one of "ready_to_buy","interested","price","question","objection","not_interested","wrong_person","asks_if_bot","other","plan": one of "monthly","annual","monthly_seo","reply": string}. Use "ready_to_buy" ONLY when they clearly say they want to go ahead and pay or sign up (e.g. "let's do it", "how do I sign up", "send me the link to pay", "I'll take it"); a yes to seeing the sample, a maybe, or a question is NOT ready_to_buy. "plan": "annual" only if they chose paying the year up front, "monthly_seo" only if they asked for the SEO add-on, otherwise "monthly". For ready_to_buy set "reply" to "". "reply" is a short friendly plain-ASCII text from Zac (max 220 chars, no emoji) or "" if no reply should be sent. Rules: never state any price or timeline unless it appears in OFFER below; if price is asked and OFFER is empty, reply that you'll grab the details and text right back; never promise anything not in OFFER; if they ask whether this is a bot/automated/AI, intent "asks_if_bot" and reply ""; if not_interested/wrong_person, reply "" ; keep the sender's casual local voice; never mention the other brand.\nOFFER: ${(L.brand === 'zw' ? S.settings.offerZw : [S.settings.offer, VARIANTS[L.variant]?.offer].filter(Boolean).join(' ')) || '(none)'}`,
         user: `Business: ${L.name}\nOur text: ${L.msg}\n${L.linkSent ? 'We already sent them the sample link.' : 'We have not sent the link yet; a separate message with the link is sent automatically, so your reply must NOT include a link.'}\nTheir reply: ${text}`, maxTokens: 1000,
       }, fetchImpl);
@@ -397,6 +405,10 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
       if (S.msgVersion < 3) { // short question-led openers, no cost in the first text
         for (const x of Object.values(S.leads)) if (x.status === 'drafted' && !x.test) { x.opener ||= nextOpener(); x.why = ''; x.writes = 0; }
         S.msgVersion = 3; save();
+      }
+      if (S.msgVersion < 4) { // opener frameworks: re-spread queued drafts over all openers
+        for (const x of Object.values(S.leads)) if (x.status === 'drafted' && !x.test) { x.opener = nextOpener(); x.why = ''; x.writes = 0; }
+        S.msgVersion = 4; save();
       }
       // supply: keep a small buffer of drafts, top up leads with a daily search batch
       const drafted = Object.values(S.leads).filter((L) => L.status === 'drafted').length;

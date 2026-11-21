@@ -329,9 +329,9 @@ test('offer split test: leads rotate through all 4 offers and the writer gets th
   const vs = Object.values(ap._state().leads).map((L) => L.variant).sort();
   assert.deepEqual(vs, ['guarantee', 'plain', 'thisweek', 'trial']);
   const prompts = log.filter((l) => l.url.includes('anthropic') && l.body.system.includes('ONE first cold text')).map((l) => l.body.system);
-  assert.ok(prompts.some((p) => /mysterious tease/.test(p)) && prompts.some((p) => /he is local/.test(p)));
+  assert.ok(prompts.some((p) => /right number/.test(p)) && prompts.some((p) => /who handles/i.test(p)));
   assert.ok(prompts.every((p) => /No price, cost/.test(p)));
-  assert.deepEqual(Object.values(ap._state().leads).map((L) => L.opener).sort().slice(0, 3), ['ask', 'ask', 'local']);
+  assert.equal(new Set(Object.values(ap._state().leads).map((L) => L.opener)).size, 4, 'four leads, four different openers');
 });
 
 test('a "no" to "do you have a website?" is an opening: the site link goes out, not a Zander handoff', async () => {
