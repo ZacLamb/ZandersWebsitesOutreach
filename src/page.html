@@ -1,0 +1,132 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZW Prospector</title><style>
+:root{--bg:#0f1115;--card:#171a21;--line:#262b36;--tx:#e8eaf0;--mut:#8b93a7;--ac:#4f8cff;--ok:#2fbf71;--bad:#ef5b5b;--warn:#f0b429}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,sans-serif}
+header{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap;position:sticky;top:0;background:var(--bg);z-index:5}
+header b{font-size:16px}.keys{margin-left:auto;display:flex;gap:6px}
+main{padding:14px;max-width:1000px;margin:auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+.card>summary{cursor:pointer;font-weight:700;list-style:none;display:flex;justify-content:space-between;gap:8px}
+.card>summary::-webkit-details-marker{display:none}.card .body{margin-top:10px}
+h3{margin:0 0 8px;font-size:15px}label.f{display:block;color:var(--mut);font-size:13px;margin:10px 0 4px}
+input,select{background:#0c0e13;color:var(--tx);border:1px solid var(--line);border-radius:8px;padding:9px;font:inherit}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:#222735;color:var(--tx);padding:9px 14px}
+button.p{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:600}button.d{background:var(--bad);border-color:var(--bad);color:#fff;font-weight:600}
+button[disabled]{opacity:.45;cursor:not-allowed}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;border:1px solid var(--line);color:var(--mut)}
+.pill.ok{color:var(--ok);border-color:var(--ok)}.pill.bad{color:var(--bad);border-color:var(--bad)}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.mut{color:var(--mut)}.small{font-size:13px}
+#banner{border-color:var(--ac);background:#122036}#banner.run{border-color:var(--warn);background:#2a2212}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:18px;text-align:center;color:var(--mut)}.drop.over{border-color:var(--ac);color:var(--tx)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}.chips label{display:flex;align-items:center;gap:6px;background:#0c0e13;border:1px solid var(--line);border-radius:999px;padding:5px 10px;font-size:13px}
+.lead{display:flex;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line);align-items:flex-start}
+.lead .main{flex:1;min-width:0}.lead .t{font-weight:600}.lead.done{opacity:.5}
+.badge{display:inline-block;min-width:22px;text-align:center;border-radius:6px;padding:1px 6px;font-weight:700;font-size:12px}
+.tA{background:#1d6b43}.tB{background:#7a5c10}.tC{background:#3a4256}
+pre{background:#0c0e13;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:240px;overflow:auto;font-size:12px;white-space:pre-wrap;margin:0}
+a{color:var(--ac)}#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#222735;border:1px solid var(--line);padding:10px 16px;border-radius:10px;display:none;max-width:90vw;z-index:9}
+.bar{position:sticky;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:10px 4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+</style></head><body>
+<header><b>ZW Prospector</b><span class="mut small">finds and stages leads · never sends a text</span><div class="keys" id="keys"></div></header>
+<main>
+<div class="card" id="banner"><div id="bannerText" style="font-weight:700"></div><div id="bannerSub" class="small mut"></div><div class="row" style="margin-top:10px" id="bannerBtns"></div></div>
+
+<details class="card" id="c-setup"><summary><span>① Client list <span class="mut small" style="font-weight:400">(people to never contact)</span></span><span id="setupState" class="small"></span></summary><div class="body">
+<div class="drop" id="drop">Drop your client CSV here, or <a href="#" id="pick">choose a file</a><input type="file" id="file" accept=".csv,text/csv" hidden></div>
+<div id="clientStatus" class="small mut" style="margin-top:8px"></div></div></details>
+
+<details class="card" id="c-find" open><summary><span>② Find prospects</span><span id="findState" class="small mut"></span></summary><div class="body">
+<div class="row"><button class="p" data-n="40">Quick test · 40 searches</button><button data-n="200">200 searches</button><button data-n="600">600 searches</button></div>
+<div class="small mut" style="margin-top:8px" id="findHelp"></div>
+<details style="margin-top:10px"><summary class="small mut" style="cursor:pointer">Choose states and trades (default: all)</summary>
+<label class="f">States <a href="#" data-all="states" class="small">all</a> · <a href="#" data-none="states" class="small">none</a></label><div class="chips" id="states"></div>
+<label class="f">Trades <a href="#" data-all="trades" class="small">all</a> · <a href="#" data-none="trades" class="small">none</a></label><div class="chips" id="trades"></div></details></div></details>
+
+<div class="card" id="c-leads"><h3>③ Leads</h3>
+<div class="row small" style="margin-bottom:8px">
+<select id="fTier"><option value="AB">Tier A + B</option><option value="A">Tier A only</option><option value="all">All tiers</option></select>
+<select id="fView"><option value="new">Not yet staged</option><option value="staged">Staged in GHL</option><option value="skipped">Skipped</option></select>
+<input id="fText" placeholder="Search name, town, trade…" style="flex:1;min-width:150px">
+<a href="/out/prospects.csv" class="small">CSV</a></div>
+<div id="leadSum" class="small mut"></div><div id="list"></div>
+<div class="bar"><button id="selTop">Select top 10</button><button id="selNone">Clear</button><span class="small mut" id="selN"></span><span style="flex:1"></span>
+<button id="skipBtn">Skip selected</button><button id="prevBtn">Preview</button><button class="d" id="pushBtn">Stage in GHL</button></div></div>
+
+<details class="card"><summary><span>Activity</span><span id="jobState" class="small mut"></span></summary><div class="body"><pre id="log"></pre></div></details>
+</main><div id="toast"></div>
+<script>
+const $=id=>document.getElementById(id),H={'X-ZW':'1','Content-Type':'application/json'};
+let S=null,leads=[],sel=new Set(),inited=false,wasRunning=false;
+function toast(m,ms=4000){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>t.style.display='none',ms)}
+async function api(p,body){const r=await fetch(p,{method:'POST',headers:H,body:JSON.stringify(body||{})});const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
+const el=(tag,cls,txt)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e};
+function chip(box,v){const l=el('label');const i=el('input');i.type='checkbox';i.value=v;i.checked=true;l.append(i,document.createTextNode(v));box.append(l)}
+const picked=box=>[...box.querySelectorAll('input:checked')].map(i=>i.value);
+document.addEventListener('click',e=>{const a=e.target.closest('[data-all],[data-none]');if(!a)return;e.preventDefault();const box=$(a.dataset.all||a.dataset.none);box.querySelectorAll('input').forEach(i=>i.checked=!!a.dataset.all)});
+
+// ---- setup / upload ----
+async function upload(f){if(!f)return;const r=await fetch('/api/clients',{method:'POST',headers:{'X-ZW':'1'},body:await f.text()});const j=await r.json();toast(r.ok?'Loaded '+j.rows+' clients':j.error);status()}
+$('pick').onclick=e=>{e.preventDefault();$('file').click()};$('file').onchange=()=>upload($('file').files[0]);
+['dragover','dragenter'].forEach(ev=>$('drop').addEventListener(ev,e=>{e.preventDefault();$('drop').classList.add('over')}));
+['dragleave','drop'].forEach(ev=>$('drop').addEventListener(ev,e=>{e.preventDefault();$('drop').classList.remove('over')}));
+$('drop').addEventListener('drop',e=>upload(e.dataTransfer.files[0]));
+
+// ---- find ----
+document.querySelectorAll('[data-n]').forEach(b=>b.onclick=async()=>{
+ const n=+b.dataset.n;try{await api('/api/find',{states:picked($('states')),trades:picked($('trades')),maxQueries:n});toast('Search started. This takes a few minutes; leads appear below when done.');status()}catch(e){toast(e.message)}});
+
+// ---- leads ----
+const SIG={'no-https':'no HTTPS','not-mobile-friendly':'not mobile friendly','template-builder':'template site','thin-content':'thin content','no-contact-path':'no contact page','weak-title':'weak title','no-service-area-pages':'no town pages','page-empty-or-broken':'site broken/empty','table-or-font-tags-layout':'very old layout'};
+function why(r){const w={none:'no website','social-only':'Facebook/social only','builder-subdomain':'free builder site','own-domain':'has own site'}[r.web_type]||r.web_type;
+ const sg=(r.signals||'').split('|').filter(Boolean).map(x=>x.startsWith('stale-copyright')?'© '+x.slice(16):(SIG[x]||x));return [w,...sg].join(' · ')}
+function visible(){const t=$('fTier').value,v=$('fView').value,q=$('fText').value.toLowerCase();
+ return leads.filter(r=>{const st=r.state;const inView=v==='new'?!st:v==='staged'?(st&&st!=='skipped'&&st!=='excluded'):(st==='skipped'||st==='excluded');
+  if(!inView)return false;if(t==='AB'&&r.tier==='C')return false;if(t==='A'&&r.tier!=='A')return false;
+  return !q||(r.name+' '+r.town+' '+r.trade).toLowerCase().includes(q)})}
+function render(){const rows=visible(),box=$('list');box.replaceChildren();
+ const canPick=$('fView').value==='new';
+ rows.slice(0,150).forEach(r=>{const d=el('div','lead'+(r.state?' done':''));
+  if(canPick){const c=el('input');c.type='checkbox';c.checked=sel.has(r.place_id);c.onchange=()=>{c.checked?sel.add(r.place_id):sel.delete(r.place_id);count()};d.append(c)}
+  const m=el('div','main');const t=el('div','t');t.append(el('span','badge t'+r.tier,r.tier),document.createTextNode(' '+r.name));
+  const s1=el('div','small mut',r.trade+' · '+r.town+' · '+r.phone+(r.reviews?' · '+r.reviews+' reviews':''));
+  const s2=el('div','small',why(r));
+  const lk=el('div','small');if(r.website&&/^https?:/.test(r.website)){const a=el('a',null,'site');a.href=r.website;a.target='_blank';a.rel='noopener';lk.append(a,document.createTextNode(' · '))}
+  if(/^https?:/.test(r.maps_url||'')){const a=el('a',null,'maps');a.href=r.maps_url;a.target='_blank';a.rel='noopener';lk.append(a)}
+  if(r.state){lk.append(document.createTextNode(' · '+(r.state==='created'?'staged in GHL':r.state==='skipped'?'skipped':r.state)));
+   if(r.state==='skipped'){const b=el('a',null,' restore');b.href='#';b.onclick=async e=>{e.preventDefault();await api('/api/skip',{ids:[r.place_id],restore:true});loadLeads()};lk.append(b)}}
+  m.append(t,s1,s2,lk);d.append(m);box.append(d)});
+ $('leadSum').textContent=rows.length+' shown'+(rows.length>150?' (first 150; filter to narrow)':'')+' · '+S.stats.total+' total found';count()}
+function count(){const n=sel.size;$('selN').textContent=n?n+' selected':'';const run=S&&S.job.running;
+ $('pushBtn').disabled=!n||run||!S.env.ghl;$('prevBtn').disabled=!n||run;$('skipBtn').disabled=!n||run;$('selTop').disabled=$('fView').value!=='new'}
+['fTier','fView','fText'].forEach(i=>$(i).oninput=()=>{sel.clear();render()});
+$('selTop').onclick=()=>{visible().slice(0,10).forEach(r=>sel.add(r.place_id));render()};$('selNone').onclick=()=>{sel.clear();render()};
+async function loadLeads(){const p=await (await fetch('/api/prospects')).json();leads=p.rows;sel.forEach(i=>{if(!leads.find(r=>r.place_id===i&&!r.state))sel.delete(i)});render()}
+$('skipBtn').onclick=async()=>{try{await api('/api/skip',{ids:[...sel]});sel.clear();loadLeads()}catch(e){toast(e.message)}};
+$('prevBtn').onclick=async()=>{try{await api('/api/push',{ids:[...sel],yes:false});toast('Preview running; see Activity.')}catch(e){toast(e.message)}status()};
+$('pushBtn').onclick=async()=>{if(!confirm('Create '+sel.size+' contact(s) + opportunities in GHL (50$ Sites → New Lead)? No texts are sent.'))return;
+ try{await api('/api/push',{ids:[...sel],yes:true});sel.clear();toast('Staging in GHL…')}catch(e){toast(e.message)}status()};
+
+// ---- status ----
+function banner(){const b=$('banner'),j=S.job,st=S.stats,btns=$('bannerBtns');btns.replaceChildren();b.classList.toggle('run',j.running);
+ const go=(t,f,cls)=>{const x=el('button',cls||'p',t);x.onclick=f;btns.append(x)};
+ if(j.running){$('bannerText').textContent='⏳ Working: '+j.name;$('bannerSub').textContent=j.log[j.log.length-1]||'';return}
+ if(!S.env.google||!S.env.ghl){$('bannerText').textContent='Add the missing keys in Railway';$('bannerSub').textContent='See the red chips at the top right. Railway redeploys automatically after you save.';return}
+ if(!S.clients.present){$('bannerText').textContent='Step 1: upload your client list';$('bannerSub').textContent='So the tool never contacts someone who is already your customer.';$('c-setup').open=true;return}
+ if(!st.total){$('bannerText').textContent='Step 2: run a quick test search';$('bannerSub').textContent='40 searches, about a couple of minutes.';go('Run quick test',()=>document.querySelector('[data-n="40"]').click());return}
+ if(st.ready){$('bannerText').textContent=st.ready+' leads ready to review';$('bannerSub').textContent=(st.staged?st.staged+' already staged in GHL. ':'')+'Tick a few and press Stage in GHL. Start with one and check it in GHL.';go('Select top lead',()=>{$('fTier').value='AB';$('fView').value='new';sel.clear();const r=visible()[0];if(r)sel.add(r.place_id);render();$('c-leads').scrollIntoView({behavior:'smooth'})});return}
+ $('bannerText').textContent=st.staged?'All good leads are staged ('+st.staged+')':'No good leads yet';$('bannerSub').textContent='Run another search to find more; it picks up where the last one stopped.';go('Search 200 more',()=>document.querySelector('[data-n="200"]').click())}
+async function status(){S=await (await fetch('/api/status')).json();
+ if(!inited){inited=true;S.states.forEach(x=>chip($('states'),x));S.trades.forEach(x=>chip($('trades'),x));loadLeads()}
+ const c=S.clients;$('clientStatus').textContent=c.present?c.rows+' clients loaded ('+c.phones+' phones, '+c.domains+' business domains)':'No client list yet.';
+ $('setupState').textContent=c.present?'✓ '+c.rows+' loaded':'needs upload';$('setupState').className='small '+(c.present?'ok':'bad');
+ if(c.present&&!$('c-setup').dataset.seen){$('c-setup').dataset.seen=1;$('c-setup').open=false}
+ $('keys').replaceChildren(...[['Google',S.env.google],['GHL',S.env.ghl]].map(([n,ok])=>el('span','pill '+(ok?'ok':'bad'),(ok?'✓ ':'✗ ')+n)));
+ const sp=S.search,left=sp.possible-sp.done;$('findState').textContent=sp.done+' of '+sp.possible+' searches done';
+ $('findHelp').textContent='Each press searches NEW towns/trades, so you can press again to keep going. Google charges per search (roughly 3–4¢ each, so 40 ≈ $1.50).';
+ const j=S.job;$('jobState').textContent=j.name?(j.running?'running: ':'last: ')+j.name+(j.running?'':' ('+(j.code===0?'ok':'exit '+j.code)+')'):'';$('log').textContent=j.log.join(String.fromCharCode(10));
+ document.querySelectorAll('[data-n]').forEach(b=>b.disabled=j.running||!c.present||!S.env.google);
+ if(wasRunning&&!j.running){loadLeads();toast(j.code===0?'Finished.':'Job failed; see Activity.')}wasRunning=j.running;
+ banner();count();clearTimeout(status.t);status.t=setTimeout(status,j.running?2000:8000)}
+status();
+</script></body></html>
