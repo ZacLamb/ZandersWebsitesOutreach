@@ -110,7 +110,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const b = JSON.parse((await readBody(req, 2e5)) || '{}');
       const contactId = b.contact_id || b.contactId || b.contact?.id;
-      const text = (typeof b.message === 'object' ? b.message?.body : b.message) || b.body || b.text || '';
+      const text = b.customData?.reply_body || b.reply_body || (typeof b.message === 'object' ? b.message?.body : b.message) || b.body || b.text || '';
       const dir = String(b.direction || b.message?.direction || 'inbound').toLowerCase();
       if (!contactId || dir === 'outbound') return send(res, 200, { ignored: true });
       return send(res, 200, await autopilot.handleInbound({ contactId, text }));
