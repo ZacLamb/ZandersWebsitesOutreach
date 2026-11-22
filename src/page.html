@@ -60,53 +60,54 @@ table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;p
 .back{display:none}
 </style></head><body>
 <header><b>ZW Outreach</b><span id="mode" class="mode off">OFF</span>
-<nav class="tabs"><button data-v="home" class="on">Home</button><button data-v="inbox">Inbox<span class="dot" id="unreadDot" style="display:none"></span></button><button data-v="pipe">Pipeline</button><button data-v="metrics">Metrics</button></nav>
+<nav class="tabs"><button data-v="inbox" class="on">Inbox<span class="dot" id="unreadDot" style="display:none"></span></button><button data-v="pipe">Pipeline</button><button data-v="metrics">Metrics</button><button data-v="leads">Leads</button><button data-v="settings">Settings</button></nav>
 <span class="today" id="todayTop"></span></header>
 <main id="main">
-<section id="v-inbox" style="display:none"><div class="inbox"><div class="card ilist"><input id="iq" placeholder="Search leads…" style="width:100%;margin-bottom:6px"><div id="ilist"></div></div>
+<section id="v-inbox"><div class="inbox"><div class="card ilist"><input id="iq" placeholder="Search leads…" style="width:100%;margin-bottom:6px"><div id="ilist"></div></div>
   <div class="card ithread" id="ithread"><div class="mut">Pick a conversation.</div></div></div></section>
 <section id="v-pipe" style="display:none"><div class="row" style="margin-bottom:10px"><button id="pRgs" class="p">RGS Outreach</button><button id="pZw">Zander's Websites Outreach</button><span class="small mut">Click a card to open the conversation. Move stages from inside the conversation.</span></div><div class="board" id="board"></div></section>
 <section id="v-metrics" style="display:none"><div id="metrics"></div></section>
-<section id="v-home">
 <div id="pausedBox" class="card alert" style="display:none"></div>
 <div id="hotWrap" style="display:none"><h2>🔥 Needs you</h2><div class="card hot" id="hot"></div></div>
-
-<h2>Get it running</h2>
-<div class="card" id="steps">
-  <div class="step" id="s1"><div class="num">1</div><div class="body"><div class="t">Upload your client list</div><div class="d" id="d1">So nobody who already pays you gets texted.</div>
-    <div class="act"><input type="file" id="file" accept=".csv,text/csv" hidden><button class="p" id="pick">Choose CSV</button></div></div></div>
-  <div class="step" id="s2"><div class="num">2</div><div class="body"><div class="t">Find leads</div><div class="d" id="d2">Searches Google for New England trade businesses with weak or no websites.</div>
-    <div class="act row"><button class="p" data-n="40">Find leads (40 searches)</button><span class="small mut">≈ $1.50 of Google searches · takes a few minutes</span></div><div id="job2" class="small warn"></div></div></div>
-  <div class="step" id="s3"><div class="num">3</div><div class="body"><div class="t">Test it on your phone</div><div class="d">Sends a real sample text to your cell. Reply "how much?" and watch the bot answer and text you an alert.</div>
-    <div class="act row"><button class="p" id="tRgs">Text me the RGS version</button><button id="tZw">Text me the Zander's version</button></div>
-    <div id="testBox"></div></div></div>
-  <div class="step" id="s4"><div class="num">4</div><div class="body"><div class="t">Preview real drafts</div><div class="d">Writes texts and sample sites for your best leads. Nothing is sent.</div>
-    <div class="act"><button class="p" id="goDraft">Start drafting</button></div><div id="drafts"></div></div></div>
-  <div class="step" id="s5"><div class="num">5</div><div class="body"><div class="t">Go live</div><div class="d" id="d5">Texts leads on its own: Mon–Sat 9am–6:30pm Eastern, starting at 20/day and ramping up.</div>
-    <div class="act"><button class="g" id="goLive">Turn on Autopilot</button></div></div></div>
-  <div class="row" id="liveCtl" style="display:none;margin-top:14px"><span class="ok" style="font-weight:700">● Autopilot is live</span><button id="pauseBtn">Pause (draft only)</button><button class="d" id="offBtn">Turn off</button></div>
-</div>
-
-<h2>Today</h2>
-<div class="card"><div class="grid" id="stats"></div><div class="small mut" id="window" style="margin-top:8px"></div></div>
-
-<h2>More</h2>
-<details class="card"><summary>All leads <span class="mut small" id="leadCount"></span></summary>
-  <div class="row small" style="margin:10px 0"><select id="fTier"><option value="AB">Tier A + B</option><option value="A">Tier A</option><option value="all">All tiers</option></select>
+<section id="v-leads" style="display:none">
+<h2>Find leads</h2>
+<div class="card"><div class="small mut" id="d2"></div>
+  <div class="row" style="margin-top:8px"><button class="p" data-n="40">Find leads (40 searches)</button><button data-n="200">Find 200 more</button></div>
+  <div class="small mut" style="margin-top:6px">≈ $1.50 per 40 searches · Autopilot also tops up on its own when leads run low · <span id="searchProg"></span></div><div id="job2" class="small warn"></div></div>
+<h2>Up next (drafted, not sent yet)</h2>
+<div class="card"><div id="drafts"></div></div>
+<h2>All leads <span class="mut small" id="leadCount"></span></h2>
+<div class="card">
+  <div class="row small" style="margin-bottom:10px"><select id="fTier"><option value="AB">Tier A + B</option><option value="A">Tier A</option><option value="all">All tiers</option></select>
   <select id="fView"><option value="new">Not contacted</option><option value="staged">In GHL</option><option value="skipped">Skipped</option></select>
   <input id="fText" placeholder="Search…" style="flex:1;min-width:120px"><a href="/out/prospects.csv">CSV</a></div>
   <div id="list"></div>
   <div class="row" style="margin-top:10px"><span class="small mut" id="selN"></span><span style="flex:1"></span><button id="skipBtn">Skip selected</button><button id="stageBtn">Add selected to GHL (no text)</button></div>
-  <div class="row" style="margin-top:10px"><button data-n="200">Find 200 more</button><span class="small mut" id="searchProg"></span></div>
-</details>
-<details class="card"><summary>Settings</summary>
-  <div class="row" style="margin-top:10px"><label class="small">Daily budget $ <input id="sBudget" type="number" step="0.5" min="0" style="width:90px"></label><label class="small">Max texts/day <input id="sCap" type="number" min="0" style="width:90px"></label></div>
+</div>
+</section>
+<section id="v-settings" style="display:none">
+<h2>Autopilot</h2>
+<div class="card"><div id="modeText" style="font-weight:700;margin-bottom:8px"></div>
+  <div class="row"><button class="g" id="goLive">Live</button><button id="pauseBtn">Draft only</button><button class="d" id="offBtn">Off</button></div>
+  <div class="small mut" id="window" style="margin-top:8px"></div></div>
+<h2>Today</h2>
+<div class="card"><div class="grid" id="stats"></div></div>
+<h2>Limits and offers</h2>
+<div class="card">
+  <div class="row"><label class="small">Daily budget $ <input id="sBudget" type="number" step="0.5" min="0" style="width:90px"></label><label class="small">Max texts/day <input id="sCap" type="number" min="0" style="width:90px"></label></div>
   <label class="f">RGS offer (what the bot may quote)</label><input id="sOffer" style="width:100%">
   <label class="f">Zander's offer (sent a week after an RGS no or no reply)</label><input id="sOfferZw" style="width:100%">
-  <div style="margin-top:10px"><button class="p" id="sSave">Save settings</button></div>
-  <div class="box small" id="keys"></div>
-</details>
-<details class="card"><summary>Activity log</summary><div id="events" class="small" style="margin-top:8px"></div><pre id="joblog"></pre></details>
+  <div style="margin-top:10px"><button class="p" id="sSave">Save settings</button></div></div>
+<h2>Test on your phone</h2>
+<div class="card"><div class="small mut">Sends a real first text to your cell from that brand's number. Reply to see the bot work.</div>
+  <div class="row" style="margin-top:8px"><button id="tRgs">Text me RGS</button><button id="tZw">Text me Zander's</button></div><div id="testBox"></div></div>
+<h2>Client list (never texted)</h2>
+<div class="card"><div class="small" id="d1"></div><div class="row" style="margin-top:8px"><input type="file" id="file" accept=".csv,text/csv" hidden><button id="pick">Upload new client CSV</button></div></div>
+<h2>Connections</h2>
+<div class="card"><div class="small" id="keys"></div></div>
+<h2>Activity log</h2>
+<div class="card"><div id="events" class="small"></div><pre id="joblog"></pre></div>
+</section>
 </section></main><div id="toast"></div>
 <script>
 const $=id=>document.getElementById(id),H={'X-ZW':'1','Content-Type':'application/json'};
@@ -121,25 +122,17 @@ document.querySelectorAll('[data-n]').forEach(b=>b.onclick=async()=>{try{await p
 $('tRgs').onclick=()=>test('rgs');$('tZw').onclick=()=>test('zw');
 async function test(brand){try{A=await post('/api/autopilot/test',{brand});toast('Sent! Check your phone.');render()}catch(e){toast(e.message)}}
 async function setMode(m,msg){try{A=await post('/api/autopilot/settings',{mode:m});toast(msg);render()}catch(e){toast(e.message)}}
-$('goDraft').onclick=()=>setMode('draft','Drafting started. Drafts show up here within a minute.');
-$('goLive').onclick=()=>{if(confirm('Turn on Autopilot? It will text leads on its own within your daily limits. STOP replies are honored automatically.'))setMode('auto','Autopilot is live.')};
-$('pauseBtn').onclick=()=>setMode('draft','Paused: drafting only, nothing sends.');
+$('goLive').onclick=()=>setMode('auto','Autopilot is live.');
+$('pauseBtn').onclick=()=>setMode('draft','Draft only: it keeps writing drafts, nothing sends.');
 $('offBtn').onclick=()=>setMode('off','Autopilot is off.');
 $('sSave').onclick=async()=>{try{A=await post('/api/autopilot/settings',{dailyBudget:+$('sBudget').value,dailyTextCap:+$('sCap').value,offer:$('sOffer').value,offerZw:$('sOfferZw').value});toast('Saved');render()}catch(e){toast(e.message)}};
 $('skipBtn').onclick=async()=>{try{await post('/api/skip',{ids:[...sel]});sel.clear();loadLeads()}catch(e){toast(e.message)}};
 $('stageBtn').onclick=async()=>{if(!confirm('Add '+sel.size+' lead(s) to GHL "RGS Outreach" without texting them?'))return;try{await post('/api/push',{ids:[...sel],yes:true});sel.clear();toast('Adding to GHL…')}catch(e){toast(e.message)}};
 ['fTier','fView','fText'].forEach(i=>$(i).oninput=()=>{sel.clear();renderLeads()});
 
-function stepState(){
-  const c=S.clients.present,found=S.stats.total>0,tested=(A.events||[]).some(e=>e.type==='test')||A.testActive,
-    drafted=(A.drafts||[]).length>0||A.settings.mode==='auto'||Object.keys(A.counts||{}).some(k=>k!=='failed'),live=A.settings.mode==='auto';
-  return [c,found,tested,drafted,live];
-}
 function render(){if(!S||!A)return;
-  const st=stepState(),cur=st.indexOf(false);
-  st.forEach((done,i)=>{const s=$('s'+(i+1));s.classList.toggle('done',done);s.classList.toggle('now',i===cur)});
-  $('d1').textContent=S.clients.present?S.clients.rows+' clients loaded. They will never be texted.':'So nobody who already pays you gets texted.';
-  $('d2').textContent=S.stats.total?S.stats.ready+' good leads ready ('+S.stats.total+' found so far).':'Searches Google for New England trade businesses with weak or no websites.';
+  $('d1').textContent=S.clients.present?S.clients.rows+' current clients loaded. They will never be texted.':'No client list yet. Upload it so nobody who already pays you gets texted.';
+  $('d2').textContent=S.stats.total?S.stats.ready+' good leads ready to text ('+S.stats.total+' found so far).':'Searches Google for New England trade businesses with weak or no websites.';
   $('job2').textContent=S.job.running?'⏳ '+(S.job.log[S.job.log.length-1]||'Working…'):'';
   document.querySelectorAll('[data-n]').forEach(b=>b.disabled=S.job.running||!S.clients.present||!S.env.google);
   const tb=$('testBox');tb.replaceChildren();const tl=A.testLead;
@@ -147,9 +140,10 @@ function render(){if(!S||!A)return;
     const row=el('div','row small');row.style.marginTop='6px';const a=el('a',null,'Open sample site');a.href=tl.url;a.target='_blank';a.rel='noopener';row.append(a);
     if(tl.lastIntent)row.append(el('span','mut','bot read your reply as "'+tl.lastIntent+'"'));const end=el('button',null,'End test');end.onclick=async()=>{A=await post('/api/autopilot/test-end');render()};row.append(end);box.append(row);tb.append(box)}
   const dr=$('drafts');dr.replaceChildren();(A.drafts||[]).slice(0,5).forEach(d=>{const b=el('div','box small');b.append(el('b',null,d.name),el('div',null,d.msg));if(d.opener||d.variant)b.append(el('div','small warn',(d.opener?'Style: '+d.opener+' · ':'')+'Offer if they ask: '+d.variant));if(d.why)b.append(el('div','small','Personalized with: '+d.why));const a=el('a',null,'Open sample site');a.href=d.url;a.target='_blank';a.rel='noopener';b.append(a);dr.append(b)});
-  if(A.settings.mode==='draft'&&!(A.drafts||[]).length)dr.append(el('div','small warn','Drafting… first ones appear within a minute (needs leads from step 2).'));
+  if(!(A.drafts||[]).length)dr.append(el('div','small mut','Nothing drafted right now.'));
   const m=A.settings.mode;$('mode').className='mode '+m;$('mode').textContent={off:'OFF',draft:'DRAFTING',auto:'LIVE'}[m];
-  $('liveCtl').style.display=m==='auto'?'flex':'none';
+  $('modeText').textContent={off:'⏹ Off: nothing is drafted or sent.',draft:'✏️ Draft only: writing drafts, nothing sends.',auto:'● Live: texting leads within your limits.'}[m];
+  $('goLive').disabled=m==='auto';$('pauseBtn').disabled=m==='draft';$('offBtn').disabled=m==='off';
   const pb=$('pausedBox');pb.replaceChildren();pb.style.display=A.paused?'block':'none';
   if(A.paused){pb.append(el('div',null,'⏸ Autopilot paused itself: '+A.paused));const b=el('button','p','Resume');b.style.marginTop='8px';b.onclick=async()=>{A=await post('/api/autopilot/resume');render()};pb.append(b)}
   const h=$('hot');h.replaceChildren();$('hotWrap').style.display=A.needsYou.length?'block':'none';
@@ -179,17 +173,17 @@ async function refresh(){
   try{[S,A]=await Promise.all([fetch('/api/status').then(r=>r.json()),fetch('/api/autopilot').then(r=>r.json())])}catch{clearTimeout(refresh.t);refresh.t=setTimeout(refresh,8000);return}
   if(wasRunning&&!S.job.running){loadLeads();toast(S.job.code===0?'Search finished.':'Search had a problem; see Activity log.')}wasRunning=S.job.running;
   render();clearTimeout(refresh.t);refresh.t=setTimeout(refresh,S.job.running||A.testActive?3000:8000)}
-refresh().then(loadLeads);
+refresh().then(loadLeads);show('inbox');
 
 // ---------- tabs, inbox, pipeline, metrics ----------
-let view='home',L=null,cur=null,pipeBrand='rgs';
+let view='inbox',L=null,cur=null,pipeBrand='rgs';
 const money=n=>'$'+(+n||0).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2});
 const ago=t=>{if(!t)return'';const m=(Date.now()-t)/6e4;return m<60?Math.max(1,m|0)+'m':m<1440?(m/60|0)+'h':(m/1440|0)+'d'};
 const fmtT=s=>{const d=new Date(s);return isNaN(d)?'':d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})};
 document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick=()=>show(b.dataset.v));
 function show(v){view=v;document.body.classList.remove('mthread');document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
-  for(const x of ['home','inbox','pipe','metrics'])$('v-'+x).style.display=x===v?'block':'none';
-  $('main').classList.toggle('wide',v!=='home');if(v==='metrics')loadMetrics();else if(v!=='home')loadLeadsW()}
+  for(const x of ['inbox','pipe','metrics','leads','settings'])$('v-'+x).style.display=x===v?'block':'none';
+  $('main').classList.toggle('wide',v==='inbox'||v==='pipe'||v==='metrics');if(v==='metrics')loadMetrics();else if(v==='inbox'||v==='pipe')loadLeadsW()}
 async function loadLeadsW(){try{L=await (await fetch('/api/leads')).json()}catch{return}
   const u=L.leads.filter(x=>x.unread||x.needsYou).length;$('unreadDot').style.display=u?'inline-block':'none';$('unreadDot').textContent=u;
   if(view==='inbox')renderInbox();if(view==='pipe')renderBoard()}
