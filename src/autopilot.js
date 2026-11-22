@@ -65,13 +65,15 @@ export function zanderMessage(p) {
   return ascii(`Hi! I'm Zander, I'm 7 and building websites is my first business (my dad helps). I made a free one for ${p.name}, can I send it to you? It's $20/mo, no setup fee.`);
 }
 export function templateMessage(p, url, step) {
-  if (step === 1) return ascii(`Hey, did you see my text? Put something together for ${p.name}, want to see it?`);
-  if (step === 2) return ascii(`Last one from me, still have what I made for ${p.name} if you ever want to see it. -Zac`);
-  return ascii(`Hey! Came across ${p.name} on Google, do you guys have a website?`);
+  if (step === 1) return ascii(`Hey, did you see my text? Put something together for ${shortName(p.name)}, want to see it?`);
+  if (step === 2) return ascii(`Last one from me, still have what I made for ${shortName(p.name)} if you ever want to see it. -Zac`);
+  return ascii(`Hey! Came across ${shortName(p.name)} on Google, do you guys have a website?`);
 }
+// "Hemerson carpentry finish inc" -> "Hemerson Carpentry Finish" for texts that sound like a person wrote them.
+export const shortName = (n) => String(n || '').replace(/\b(inc|llc|l\.l\.c|corp|co|ltd|incorporated|company)\.?\s*$/i, '').replace(/[,\s]+$/, '').replace(/(^|\s)([a-z])/g, (m) => m.toUpperCase()).trim();
 export const linkMessage = (p, url, brand) => ascii(brand === 'zw'
   ? `Yay! Here it is: ${url} I made it for ${p.name}. Tell me what you think!`
-  : `Came across ${p.name} on Google and didn't see a site, so I put one together for you already: ${url} Let me know what you think! -Zac`);
+  : `Figured! I put one together for ${shortName(p.name)} already: ${url} Let me know what you think! -Zac`);
 const SKIP_LINK = new Set(['not_interested', 'wrong_person', 'asks_if_bot']);
 
 const VOICE = `Zac's texting style: casual, plain words, short sentences, sounds like a local contractor texting another contractor. No marketing language.`;

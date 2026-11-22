@@ -346,5 +346,5 @@ test('a "no" to "do you have a website?" is an opening: the site link goes out, 
   await ap.handleInbound({ contactId: 'c1', text: 'no' });
   const tri = log.filter((l) => l.url.includes('anthropic') && /Their reply: no/.test(l.body.messages?.[0]?.content || '')).at(-1);
   assert.match(tri.body.system, /are NOT rejections/);
-  assert.match(ap._state().pending[0].text, /put one together .* already: https:\/\/x\.up\.railway\.app\/s\//);
+  assert.match(ap._state().pending[0].text, /put one together for .* already: https:\/\/x\.up\.railway\.app\/s\//);
 });
