@@ -173,7 +173,7 @@ async function refresh(){
   try{[S,A]=await Promise.all([fetch('/api/status').then(r=>r.json()),fetch('/api/autopilot').then(r=>r.json())])}catch{clearTimeout(refresh.t);refresh.t=setTimeout(refresh,8000);return}
   if(wasRunning&&!S.job.running){loadLeads();toast(S.job.code===0?'Search finished.':'Search had a problem; see Activity log.')}wasRunning=S.job.running;
   render();clearTimeout(refresh.t);refresh.t=setTimeout(refresh,S.job.running||A.testActive?3000:8000)}
-refresh().then(loadLeads);show('inbox');
+refresh().then(loadLeads);
 
 // ---------- tabs, inbox, pipeline, metrics ----------
 let view='inbox',L=null,cur=null,pipeBrand='rgs';
@@ -240,5 +240,5 @@ async function loadMetrics(){let M;try{M=await (await fetch('/api/metrics')).jso
   const c=el('div','card');const t=el('table');const h=el('tr');['Day','Texts','Replies','Spend'].forEach((x,i)=>h.append(el('th',i?'r':null,x)));t.append(h);
   M.days.slice().reverse().forEach(d=>{const tr=el('tr');tr.append(el('td',null,d.date),el('td','r',String(d.texts)),el('td','r',String(d.replies)),el('td','r',money(d.spend)));t.append(tr)});c.append(t);box.append(el('h2',null,'Last 14 days'),c)}
 setInterval(()=>{if(view==='inbox'||view==='pipe')loadLeadsW();else if(view==='metrics')loadMetrics();else fetch('/api/leads').then(r=>r.json()).then(j=>{L=j;const u=j.leads.filter(x=>x.unread||x.needsYou).length;$('unreadDot').style.display=u?'inline-block':'none';$('unreadDot').textContent=u}).catch(()=>{})},15000);
-loadLeadsW();
+show('inbox');
 </script></body></html>
