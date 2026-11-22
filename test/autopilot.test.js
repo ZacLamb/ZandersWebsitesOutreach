@@ -348,3 +348,11 @@ test('a "no" to "do you have a website?" is an opening: the site link goes out, 
   assert.match(tri.body.system, /are NOT rejections/);
   assert.match(ap._state().pending[0].text, /put one together for .* already: https:\/\/x\.up\.railway\.app\/s\//);
 });
+
+test('owner: AI until you reply or it hits 2 replies; take over / hand back', async () => {
+  const { ap } = setup(); ap.setSettings({ mode: 'auto' }); await ap.tick(); await ap.tick();
+  assert.equal(ap.leadsView()[0].owner, 'ai');
+  await ap.reply('ChIJ1', 'hey its zac'); assert.equal(ap.leadsView()[0].owner, 'you');
+  ap.setOwner('ChIJ1', 'ai'); assert.equal(ap.leadsView()[0].owner, 'ai'); assert.equal(ap._state().leads.ChIJ1.manual, false);
+  ap.setOwner('ChIJ1', 'you'); assert.equal(ap.leadsView()[0].owner, 'you');
+});

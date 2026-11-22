@@ -330,7 +330,7 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
     const body = String(text || '').slice(0, 1000);
     L.replies.push({ at: now().toISOString(), text: body }); day().replies++; L.unread = true;
     const unread = Object.values(S.leads).filter((x) => x.unread || x.needsYou).length;
-    try { await deps.notify?.({ title: `${L.name}${L.brand === 'zw' ? " (Zander's)" : ''}`, body: body.slice(0, 180), id: L.id, url: `/?lead=${encodeURIComponent(L.id)}`, badge: unread }); } catch {}
+    try { await deps.notify?.({ title: `${ownerOf(L) === 'you' ? '👤 ' : '🤖 '}${L.name}${L.brand === 'zw' ? " (Zander's)" : ''}`, body: body.slice(0, 180), id: L.id, url: `/?lead=${encodeURIComponent(L.id)}`, badge: unread }); } catch {}
     if (isOptOut(body)) {
       L.status = 'opted_out'; if (!S.optOut.includes(L.phone)) S.optOut.push(L.phone); day().optouts++;
       ev('optout', `${L.name} opted out`, L.id);
@@ -491,13 +491,22 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
     if (L.inZwQueue) return { pipe: 'zw', stage: 'QUEUED' };
     return m[L.status] ? { pipe: brandOf(L), stage: m[L.status] } : null;
   }
+  // Who is answering this lead right now: 'ai' (bot still replies), 'you' (you took over or the bot handed off), 'done' (closed/opted out/won)
+  const ownerOf = (L) => (['opted_out', 'won', 'closed', 'bad_number', 'duplicate'].includes(L.status) ? 'done' : L.manual || L.botReplies >= S.settings.maxBotReplies ? 'you' : 'ai');
+  function setOwner(id, who) {
+    load(); const L = S.leads[id]; if (!L) throw new Error('lead not found');
+    if (who === 'you') { L.manual = true; ev('info', `You took over ${L.name}`, L.id); }
+    else if (who === 'ai') { L.manual = false; L.botReplies = 0; L.needsYou = false; ev('info', `Handed ${L.name} back to the AI`, L.id); }
+    else throw new Error('owner must be you or ai');
+    save(); return { owner: ownerOf(L) };
+  }
   function leadsView() {
     load();
     return Object.values(S.leads).filter((L) => !L.test && L.contactId).map((L) => {
       const st = derivedStage(L) || { pipe: 'rgs', stage: 'TEXTED' };
       const lastIn = L.replies.filter((r) => !r.bot && !r.me).slice(-1)[0];
       return { id: L.id, name: L.name, trade: L.trade, town: L.town, phone: L.phone, brand: brandOf(L), pipe: st.pipe, stage: st.stage, status: L.status,
-        needsYou: !!L.needsYou, unread: !!L.unread, lastAt: lastAt(L), last: lastIn?.text || '', intent: L.lastIntent || '', url: L.url || '', zwUrl: L.zwUrl || '',
+        needsYou: !!L.needsYou, unread: !!L.unread, owner: ownerOf(L), lastAt: lastAt(L), last: lastIn?.text || '', intent: L.lastIntent || '', url: L.url || '', zwUrl: L.zwUrl || '',
         angle: L.angle || '', why: L.why || '', variant: VARIANTS[L.variant]?.label || '', paid: L.paid || null, payLinks: (L.payLinks || []).map(({ url, plan, brand, at }) => ({ url, plan, brand, at })), contactId: L.contactId };
     }).sort((a, b) => b.lastAt - a.lastAt);
   }
@@ -595,5 +604,5 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
       setup: { claude: !!env.ANTHROPIC_API_KEY, ghl: ghlReady(), publicUrl: !!publicUrl(), stages: !!(stage('TEXTED') && stage('RESPOND_YES')), zwPipeline: zwPipe(), webhook: !!env.GHL_WEBHOOK_SECRET, alerts: !!env.ALERT_CONTACT_ID, numberRgs: !!(env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER), numberZw: !!env.GHL_FROM_NUMBER_ZW, inWindow: canSendNow(now(), 'MA') },
     };
   }
-  return { tick, handleInbound, setSettings, resume, resolve, view, testSend, endTest, leadsView, thread, reply, setStage, payLink, pollPayments, metrics, _state: () => load() };
+  return { tick, handleInbound, setSettings, resume, resolve, view, testSend, endTest, leadsView, thread, reply, setStage, setOwner, payLink, pollPayments, metrics, _state: () => load() };
 }

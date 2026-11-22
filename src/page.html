@@ -118,6 +118,11 @@ button,.btn{border-radius:12px;font-weight:600;border-color:var(--line);backgrou
  body.mthread nav.tabs{display:none}
  .msg{max-width:84%}
 }
+
+.own{font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:2px 7px;border-radius:999px;white-space:nowrap}
+.own.ai{background:rgba(110,168,255,.14);color:var(--rgs)}.own.you{background:rgba(255,122,26,.18);color:var(--ac2)}.own.done{background:var(--card2);color:var(--mut)}
+.ifilter{display:flex;gap:6px;margin:8px 0 4px}.ifilter button{font-size:13px;padding:6px 12px;border-radius:999px}.ifilter button.on{background:var(--tx);color:var(--bg);border-color:var(--tx)}
+.ownbar{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line);font-size:13px}.ownbar.ai{background:rgba(110,168,255,.07)}.ownbar.you{background:rgba(255,122,26,.08)}.ownbar span{flex:1;color:var(--tx)}.ownbar button{font-size:12.5px;padding:6px 11px;border-radius:999px}
 </style></head><body>
 <header><div class="brand"><span class="logo">ZW</span><b>Outreach</b><span id="mode" class="mode off">OFF</span></div><span class="today" id="todayTop"></span>
 <nav class="tabs">
@@ -128,7 +133,7 @@ button,.btn{border-radius:12px;font-weight:600;border-color:var(--line);backgrou
 <button data-v="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg><span>Settings</span></button>
 </nav></header>
 <main id="main">
-<section id="v-inbox"><div class="inbox"><div class="ilist"><input id="iq" class="search" placeholder="Search conversations"><div id="ilist"></div></div>
+<section id="v-inbox"><div class="inbox"><div class="ilist"><input id="iq" class="search" placeholder="Search conversations"><div class="ifilter" id="ifilter"><button data-f="all" class="on">All</button><button data-f="you">👤 Yours</button><button data-f="ai">🤖 AI working</button></div><div id="ilist"></div></div>
   <div class="ithread" id="ithread"><div class="mut">Pick a conversation.</div></div></div></section>
 <section id="v-pipe" style="display:none"><div class="seg"><button id="pRgs" class="on">RGS</button><button id="pZw">Zander's</button></div><div class="stagechips" id="stagechips"></div><div id="board" class="plist"></div></section>
 <section id="v-metrics" style="display:none"><div id="metrics"></div></section>
@@ -265,10 +270,13 @@ function leadRow(x,click){const r=el('div','irow'+(cur===x.id?' on':'')+(x.unrea
   if(x.paid)pv.append(el('span','tag paid','PAID '+money(x.paid.amount)),document.createTextNode(' '));
   else if(x.needsYou)pv.append(el('span','tag hot','NEEDS YOU'),document.createTextNode(' '));
   pv.append(document.createTextNode(x.last?'“'+x.last+'”':stageName(x.pipe,x.stage)+(x.brand==='zw'?" · Zander's":'')));
+  top.insertBefore(el('span','own '+x.owner,{ai:'🤖 AI',you:'👤 YOU',done:'DONE'}[x.owner]||''),top.lastChild);
   m.append(top,pv);r.append(av,m);r.onclick=click;return r}
+let ifilt='all';document.querySelectorAll('#ifilter button').forEach(b=>b.onclick=()=>{ifilt=b.dataset.f;document.querySelectorAll('#ifilter button').forEach(x=>x.classList.toggle('on',x===b));renderInbox()});
 function renderInbox(){const q=$('iq').value.toLowerCase(),box=$('ilist');box.replaceChildren();
-  const rows=L.leads.filter(x=>!q||(x.name+' '+x.town+' '+x.trade).toLowerCase().includes(q));
-  if(!rows.length)box.append(el('div','empty',q?'No matches.':'No conversations yet. Leads show up here once Autopilot texts them.'));
+  const rows=L.leads.filter(x=>(ifilt==='all'||x.owner===ifilt)&&(!q||(x.name+' '+x.town+' '+x.trade).toLowerCase().includes(q)));
+  for(const b of document.querySelectorAll('#ifilter button')){const f=b.dataset.f;if(f!=='all'){const n=L.leads.filter(x=>x.owner===f).length;b.textContent=(f==='you'?'👤 Yours':'🤖 AI working')+' '+n}}
+  if(!rows.length)box.append(el('div','empty',q?'No matches.':ifilt==='you'?'Nothing waiting on you.':ifilt==='ai'?'The AI is not working any threads right now.':'No conversations yet. Leads show up here once Autopilot texts them.'));
   rows.forEach(x=>box.append(leadRow(x,()=>openThread(x.id))))}
 async function openThread(id){cur=id;if(view!=='inbox')show('inbox');const th=$('ithread');th.replaceChildren(el('div','empty','Loading…'));document.body.classList.add('mthread');
   let T;try{const r=await fetch('/api/thread/'+encodeURIComponent(id));T=await r.json();if(!r.ok)throw new Error(T.error)}catch(e){th.replaceChildren(el('div','empty',e.message));return}
@@ -283,6 +291,10 @@ async function openThread(id){cur=id;if(view!=='inbox')show('inbox');const th=$(
   const site=x.brand==='zw'&&x.zwUrl?x.zwUrl:x.url;if(site){const a=el('a','pillbtn','🌐 Their site');a.href=site;a.target='_blank';a.rel='noopener';bar.append(a)}
   if(x.contactId){const g=el('a','pillbtn','GHL ↗');g.href=ghl;g.target='_blank';g.rel='noopener';bar.append(g)}
   if(x.paid)bar.append(el('span','pillbtn','✅ Paid '+money(x.paid.amount)));
+  const ob=el('div','ownbar '+x.owner);
+  const otext={ai:'🤖 The AI is answering this one. It hands off to you after 2 replies or if you text them.',you:'👤 This one is yours. The AI will not reply.',done:'This conversation is closed.'}[x.owner]||'';
+  ob.append(el('span',null,otext));
+  if(x.owner!=='done'){const ob2=el('button',null,x.owner==='ai'?'Take over':'Hand back to AI');ob2.onclick=async()=>{try{await post('/api/lead/owner',{id:x.id,owner:x.owner==='ai'?'you':'ai'});toast(x.owner==='ai'?'It is yours now':'The AI has it again');await loadLeadsW();openThread(x.id)}catch(e){toast(e.message)}};ob.append(ob2)}
   const ms=el('div','msgs');if(x.why)ms.append(el('div','why','First text used: '+x.why));
   T.messages.forEach(m=>{const b=el('div','msg '+(m.out?'out':'in'),m.text);b.append(el('div','t',fmtT(m.at)));ms.append(b)});
   if(!T.messages.length)ms.append(el('div','empty','No messages yet.'));
@@ -295,7 +307,7 @@ async function openThread(id){cur=id;if(view!=='inbox')show('inbox');const th=$(
   const pb=el('button','payb','💳');pb.title='Payment link';pb.onclick=()=>sheet.classList.toggle('open');
   const send=el('button','sendb','↑');send.onclick=async()=>{if(!ta.value.trim())return;send.disabled=true;try{await post('/api/lead/reply',{id:x.id,text:ta.value});ta.value='';grow();toast('Sent');openThread(x.id);loadLeadsW()}catch(e){toast(e.message)}send.disabled=false};
   const brow=el('div','bar');brow.append(pb,ta,send);comp.append(sheet,brow);
-  th.append(hd,bar,ms,comp);ms.scrollTop=ms.scrollHeight;renderInbox()}
+  th.append(hd,bar,ob,ms,comp);ms.scrollTop=ms.scrollHeight;renderInbox()}
 let pipeStage=null;
 $('pRgs').onclick=()=>{pipeBrand='rgs';pipeStage=null;renderBoard()};$('pZw').onclick=()=>{pipeBrand='zw';pipeStage=null;renderBoard()};
 function renderBoard(){$('pRgs').className=pipeBrand==='rgs'?'on':'';$('pZw').className=pipeBrand==='zw'?'on':'';

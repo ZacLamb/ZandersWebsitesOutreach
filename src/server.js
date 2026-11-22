@@ -211,6 +211,7 @@ const server = http.createServer(async (req, res) => {
         const o = JSON.parse((await readBody(req, 1e5)) || '{}'); const id = String(o.id || '');
         try {
           if (url.pathname === '/api/lead/reply') return send(res, 200, await autopilot.reply(id, o.text));
+          if (url.pathname === '/api/lead/owner') return send(res, 200, autopilot.setOwner(id, String(o.owner || '')));
           if (url.pathname === '/api/lead/stage') return send(res, 200, await autopilot.setStage(id, String(o.stage || '')));
           if (url.pathname === '/api/lead/paylink') return send(res, 200, await autopilot.payLink(id, String(o.plan || '')));
         } catch (e) { return send(res, 400, { error: e.message }); }
