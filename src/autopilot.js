@@ -390,8 +390,9 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
       try { await addTags(env, contactId, ['zw-hot'], fetchImpl); } catch {}
       await alertZac(`ZW lead: ${L.name} replied "${body.slice(0, 120)}"`);
     }
-    if (c.reply && !L.manual && L.botReplies < S.settings.maxBotReplies) { S.pending.push({ id: L.id, at: now().getTime() + 45e3 + Math.random() * 75e3, text: c.reply }); L.botReplies++; }
-    ev('reply', `${L.name}: "${body.slice(0, 80)}" -> ${c.intent}${c.reply ? ' (auto-reply queued)' : ''}`, L.id);
+    const queued = !!(c.reply && !L.manual && L.botReplies < S.settings.maxBotReplies);
+    if (queued) { S.pending.push({ id: L.id, at: now().getTime() + 45e3 + Math.random() * 75e3, text: c.reply }); L.botReplies++; }
+    ev('reply', `${L.name}: "${body.slice(0, 80)}" -> ${c.intent}${queued ? ' (auto-reply queued)' : L.manual ? ' (yours, bot stays quiet)' : ''}`, L.id);
     save(); return { intent: c.intent };
   }
 
