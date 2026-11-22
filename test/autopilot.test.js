@@ -423,3 +423,21 @@ test('learning: takeovers and stage fixes are recorded, lessons feed the bot pro
   ap.forget(id); assert.equal(ap.learnView().lessons.length, 1);
   await ap.learnNow('again'); assert.equal(ap.learnView().lessons.filter((l) => l.source === 'study').length, 0);
 });
+
+test('set to send: bot reply waits while Zac has the thread open; send now / edit / cancel, and edits are learned', async () => {
+  const { ap, log } = setup(); ap.setSettings({ mode: 'auto' }); await ap.tick(); await ap.tick();
+  await ap.handleInbound({ contactId: 'c1', text: "Yes who's this" });
+  let v = ap.live('ChIJ1'); assert.equal(v.pending.length, 1); const p = v.pending[0]; assert.ok(p.pid);
+  const sends = () => log.filter((l) => l.url.endsWith('/conversations/messages')).length; const before = sends();
+  ap._state().pending[0].at = 0; await ap.tick(); assert.equal(sends(), before, 'held while viewing');
+  assert.equal(ap.live('ChIJ1').pending[0].holding, true);
+  v = await ap.draftAction('ChIJ1', p.pid, 'edit', "Hey it's Zac! I build sites for trades around here, made one for you, want to see it?");
+  assert.equal(v.pending.length, 0); assert.equal(sends(), before + 1);
+  assert.match(log.filter((l) => l.url.endsWith('/conversations/messages')).at(-1).body.message, /made one for you/);
+  const L = ap._state().leads.ChIJ1; assert.equal(L.manual, undefined); assert.equal(L.replies.at(-1).edited, true);
+  assert.equal(ap.learnView().edits, 1);
+  // cancel the link message resets linkSent
+  await ap.handleInbound({ contactId: 'c1', text: 'sure' }); assert.equal(L.linkSent, true);
+  const q = ap.live('ChIJ1').pending[0]; await ap.draftAction('ChIJ1', q.pid, 'cancel');
+  assert.equal(L.linkSent, false); assert.equal(ap.live('ChIJ1').pending.length, 0);
+});

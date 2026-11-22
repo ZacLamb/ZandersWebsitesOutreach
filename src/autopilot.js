@@ -370,8 +370,8 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
   const learnData = () => { const ls = Object.values(load().leads).filter((L) => !L.test && L.firstSentAt); return { texts: ls.length, replies: ls.filter((L) => L.replies.some((r) => !r.bot && !r.me)).length }; };
   const studyLive = () => { const d = learnData(); return d.texts >= LEARN_MIN.texts && d.replies >= LEARN_MIN.replies; };
   const lessonsFor = (...areas) => LRN().lessons.filter((x) => areas.includes(x.area) && (x.source === 'zac' || studyLive())).map((x) => `- ${x.text}`).join('\n');
-  const examples = (n = 6) => !studyLive() ? '' : LRN().corrections.filter((c) => c.kind === 'takeover' && c.theySaid && c.zac).slice(0, n)
-    .map((c) => `They said: "${c.theySaid.slice(0, 140)}" -> Zac replied: "${c.zac.slice(0, 200)}"`).join('\n');
+  const examples = (n = 8) => !studyLive() ? '' : LRN().corrections.filter((c) => ['takeover', 'edit'].includes(c.kind) && c.theySaid && c.zac).slice(0, n)
+    .map((c) => c.kind === 'edit' ? `They said: "${c.theySaid.slice(0, 140)}" -> the bot drafted "${(c.botSaid || '').slice(0, 160)}" -> Zac changed it to: "${c.zac.slice(0, 200)}"` : `They said: "${c.theySaid.slice(0, 140)}" -> Zac replied: "${c.zac.slice(0, 200)}"`).join('\n');
   const learnBlock = (areas, withExamples) => {
     const l = lessonsFor(...areas), e = withExamples ? examples() : '';
     if (!l && !e) return '';
@@ -398,10 +398,12 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
     const m = metrics();
     const opens = Object.entries(m.byOpener || {}).map(([k, v]) => `${k}: ${v.texted} texted, ${v.replied} replied, ${v.interested} interested, ${v.won} won`).join('\n');
     const corr = X.corrections.slice(0, 60).map((c) => c.kind === 'takeover' ? `TAKEOVER ${c.name}: they said "${(c.theySaid || '').slice(0, 120)}"${c.botSaid ? `, bot had said "${c.botSaid.slice(0, 120)}"` : ''}, Zac wrote "${(c.zac || '').slice(0, 200)}"`
+      : c.kind === 'edit' ? `EDIT ${c.name}: they said "${(c.theySaid || '').slice(0, 120)}", bot drafted "${(c.botSaid || '').slice(0, 160)}", Zac changed it to "${(c.zac || '').slice(0, 200)}"`
+      : c.kind === 'approve' ? `APPROVED AS-IS ${c.name}: they said "${(c.theySaid || '').slice(0, 100)}", bot reply "${(c.botSaid || '').slice(0, 140)}"`
       : c.kind === 'stage' ? `STAGE ${c.name}: Zac moved ${c.from || '?'} -> ${c.to} (bot had classified "${c.intent || '-'}")` : `${c.kind.toUpperCase()} ${c.name}${c.note ? ': ' + c.note : ''}`).join('\n');
     const out = await askClaude(env, {
       model: WRITER(), maxTokens: 4000,
-      system: `You coach an SMS sales bot that sells websites to local New England trade businesses for Zac (brand RGS: build + monthly care; brand Zander's Websites: $20/mo run by his 7-year-old son). Zac is the expert closer. Study the real conversations, Zac's own takeovers (lines marked ZAC are him; BOT is the bot) and his manual stage corrections, plus which openers got replies and sales. Write the playbook the bot should follow from now on.
+      system: `You coach an SMS sales bot that sells websites to local New England trade businesses for Zac (brand RGS: build + monthly care; brand Zander's Websites: $20/mo run by his 7-year-old son). Zac is the expert closer. Study the real conversations, the bot drafts Zac edited, approved or cancelled before they went out (edits are the strongest signal of what he wants), Zac's own takeovers (lines marked ZAC are him; BOT is the bot) and his manual stage corrections, plus which openers got replies and sales. Write the playbook the bot should follow from now on.
 
 Learn mostly from: what Zac wrote when he stepped in (his wording, order, how he handles price and objections), where the bot misread a reply (Zac moved the stage), what first texts got answers, and what led to payment. Ignore one-off noise. Prefer specific, testable rules over vague advice ("When they ask 'how much', give the monthly number first and ask if they want the link" beats "be helpful").
 
@@ -425,7 +427,7 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
   function learnView() {
     const X = LRN();
     return { live: studyLive(), data: learnData(), min: LEARN_MIN, summary: X.summary, lessons: X.lessons, lastRun: X.lastRun, runs: X.runs, studied: X.studied,
-      takeovers: X.corrections.filter((c) => c.kind === 'takeover').length, stageFixes: X.corrections.filter((c) => c.kind === 'stage').length,
+      takeovers: X.corrections.filter((c) => c.kind === 'takeover').length, edits: X.corrections.filter((c) => ['edit', 'cancel'].includes(c.kind)).length, approvals: X.corrections.filter((c) => c.kind === 'approve').length, stageFixes: X.corrections.filter((c) => c.kind === 'stage').length,
       recent: X.corrections.slice(0, 8).map(({ at, kind, name, theySaid, zac, from, to }) => ({ at, kind, name, theySaid, zac, from, to })) };
   }
   function teach(text) {
@@ -530,9 +532,11 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
     for (const p of [...S.pending]) {
       if (testOnly && !S.leads[p.id]?.test) continue;
       if (p.at > t || (!S.leads[p.id]?.test && !canReplyNow(now()))) continue;
+      p.firstDue ||= p.at;
+      if (!p.approved && (S.leads[p.id]?.viewingUntil || 0) > t && t - p.firstDue < 10 * 60e3) continue; // Zac has the thread open: wait for him (max 10 min)
       S.pending = S.pending.filter((x) => x !== p);
       const L = S.leads[p.id]; if (!L || L.status === 'opted_out' || !room(segments(p.text) * COST.sms)) continue;
-      try { await sendSms(env, L.contactId, p.text, fetchImpl, L.brand === 'zw' ? env.GHL_FROM_NUMBER_ZW : (env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER)); day().spend += segments(p.text) * COST.sms; L.replies.push({ at: now().toISOString(), text: p.text, bot: true }); ev('send', `Auto-replied to ${L.name}`, L.id); }
+      try { await sendSms(env, L.contactId, p.text, fetchImpl, L.brand === 'zw' ? env.GHL_FROM_NUMBER_ZW : (env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER)); day().spend += segments(p.text) * COST.sms; L.replies.push({ at: now().toISOString(), text: p.text, bot: true, ...(p.edited ? { edited: true } : {}) }); ev('send', `${p.edited ? 'Sent your edit to' : p.approved ? 'You approved the reply to' : 'Auto-replied to'} ${L.name}`, L.id); }
       catch (e) { ev('error', `Auto-reply failed for ${L.name}: ${e.message}`, L.id); }
       save();
     }
@@ -623,6 +627,34 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
   }
   // Who is answering this lead right now: 'ai' (bot still replies), 'you' (you took over or the bot handed off), 'done' (closed/opted out/won)
   const ownerOf = (L) => (['opted_out', 'won', 'closed', 'bad_number', 'duplicate'].includes(L.status) ? 'done' : L.manual || L.botReplies >= S.settings.maxBotReplies ? 'you' : 'ai');
+  // The open thread polls this: marks Zac as looking (bot replies wait for him) and returns what is set to send.
+  const pid = () => Math.random().toString(36).slice(2, 10);
+  function live(id) {
+    load(); const L = S.leads[id]; if (!L) throw new Error('lead not found');
+    const t = now().getTime(); L.viewingUntil = t + 25e3;
+    const pend = S.pending.filter((p) => p.id === id).map((p) => { p.pid ||= pid(); p.firstDue ||= p.at; return { pid: p.pid, text: p.text, at: p.at, holding: !p.approved && t >= p.at && t - p.firstDue < 10 * 60e3, releaseAt: p.firstDue + 10 * 60e3, inWindow: canReplyNow(now()) }; });
+    return { pending: pend, n: L.replies.length, owner: ownerOf(L) };
+  }
+  async function draftAction(id, p_id, action, text) {
+    load(); const L = S.leads[id]; const p = S.pending.find((x) => x.id === id && x.pid === p_id);
+    if (!L || !p) throw new Error('that reply already went out or was cancelled');
+    const theySaid = L.replies.filter((r) => !r.bot && !r.me).slice(-1)[0]?.text || '';
+    if (action === 'cancel') {
+      S.pending = S.pending.filter((x) => x !== p);
+      if (L.url && p.text.includes(L.url)) { L.linkSent = false; } else if (L.sampleOffered && !L.linkSent) L.sampleOffered = false; else if (L.botReplies > 0) L.botReplies--;
+      record('cancel', L, { theySaid, botSaid: p.text, note: `cancelled the bot's reply "${p.text.slice(0, 100)}" after they said "${theySaid.slice(0, 80)}"` });
+      ev('info', `You cancelled the AI's reply to ${L.name}`, L.id); save(); return live(id);
+    }
+    if (!canReplyNow(now())) throw new Error('Outside texting hours (8am-9pm their time). It will send when the window opens.');
+    if (action === 'edit') {
+      const t = ascii(String(text || '')).trim().slice(0, 600); if (!t) throw new Error('empty message');
+      if (L.url && p.text.includes(L.url) && !t.includes(L.url)) L.linkSent = false;
+      record('edit', L, { theySaid, botSaid: p.text, zac: t });
+      p.text = t; p.edited = true;
+    } else if (action === 'send') record('approve', L, { theySaid, botSaid: p.text });
+    else throw new Error('unknown action');
+    p.approved = true; p.at = 0; save(); await flushPending(); return live(id);
+  }
   function setOwner(id, who) {
     load(); const L = S.leads[id]; if (!L) throw new Error('lead not found');
     if (who === 'you') { L.manual = true; record('takeover_flag', L, { note: `took over after they said "${(L.replies.filter((r) => !r.bot && !r.me).slice(-1)[0]?.text || '').slice(0, 100)}"` }); ev('info', `You took over ${L.name}`, L.id); }
@@ -650,7 +682,7 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
       if (L.lastSentAt) msgs.push({ at: new Date(L.lastSentAt).toISOString(), text: L.msg, out: true });
       for (const r of L.replies) msgs.push({ at: r.at, text: r.text, out: !!(r.bot || r.me) });
     }
-    return { lead: leadsView().find((x) => x.id === id) || { id, name: L.name }, messages: msgs, plans: PLANS[brandOf(L)], stripe: !!stripeKey(env, brandOf(L)) };
+    return { lead: leadsView().find((x) => x.id === id) || { id, name: L.name }, messages: msgs, plans: PLANS[brandOf(L)], stripe: !!stripeKey(env, brandOf(L)), n: L.replies.length };
   }
   async function reply(id, text) {
     load(); const L = S.leads[id]; if (!L?.contactId) throw new Error('lead has no GHL contact yet');
@@ -739,5 +771,5 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
       setup: { claude: !!env.ANTHROPIC_API_KEY, ghl: ghlReady(), publicUrl: !!publicUrl(), stages: !!(stage('TEXTED') && stage('RESPOND_YES')), zwPipeline: zwPipe(), webhook: !!env.GHL_WEBHOOK_SECRET, alerts: !!env.ALERT_CONTACT_ID, numberRgs: !!(env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER), numberZw: !!env.GHL_FROM_NUMBER_ZW, inWindow: canSendNow(now(), 'MA') },
     };
   }
-  return { tick, handleInbound, setSettings, resume, resolve, view, testSend, endTest, leadsView, thread, reply, setStage, setOwner, payLink, pollPayments, metrics, learnNow, learnView, teach, forget, _state: () => load() };
+  return { tick, handleInbound, setSettings, resume, resolve, view, testSend, endTest, leadsView, thread, reply, setStage, setOwner, payLink, pollPayments, metrics, live, draftAction, learnNow, learnView, teach, forget, _state: () => load() };
 }

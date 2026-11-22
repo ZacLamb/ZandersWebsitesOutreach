@@ -184,6 +184,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/autopilot') return send(res, 200, autopilot.view());
     if (req.method === 'GET' && url.pathname === '/api/leads') return send(res, 200, { leads: autopilot.leadsView(), stages: STAGES, plans: PLANS, stripe: { rgs: !!process.env.STRIPE_KEY_RGS, zw: !!process.env.STRIPE_KEY_ZW } });
     if (req.method === 'GET' && url.pathname === '/api/push/key') return send(res, 200, { key: push.publicKey(), devices: push.count() });
+    if (req.method === 'GET' && url.pathname === '/api/lead/live') { try { return send(res, 200, autopilot.live(String(url.searchParams.get('id') || ''))); } catch (e) { return send(res, 400, { error: e.message }); } }
     if (req.method === 'GET' && url.pathname === '/api/learn') return send(res, 200, autopilot.learnView());
     if (req.method === 'GET' && url.pathname === '/api/metrics') return send(res, 200, autopilot.metrics());
     const tmatch = url.pathname.match(/^\/api\/thread\/([\w-]{3,200})$/);
@@ -221,6 +222,7 @@ const server = http.createServer(async (req, res) => {
         const o = JSON.parse((await readBody(req, 1e5)) || '{}'); const id = String(o.id || '');
         try {
           if (url.pathname === '/api/lead/reply') return send(res, 200, await autopilot.reply(id, o.text));
+          if (url.pathname === '/api/lead/draft') return send(res, 200, await autopilot.draftAction(id, String(o.pid || ''), String(o.action || ''), o.text));
           if (url.pathname === '/api/lead/owner') return send(res, 200, autopilot.setOwner(id, String(o.owner || '')));
           if (url.pathname === '/api/lead/stage') return send(res, 200, await autopilot.setStage(id, String(o.stage || '')));
           if (url.pathname === '/api/lead/paylink') return send(res, 200, await autopilot.payLink(id, String(o.plan || '')));
