@@ -74,8 +74,8 @@ export const shortName = (n) => String(n || '').replace(/\b(inc|llc|l\.l\.c|corp
 // Fallbacks only (the AI writes these from the actual conversation). Both say who Zac is and why he is texting.
 export const linkMessage = (p, url, brand) => ascii(brand === 'zw'
   ? `Yay! Here it is: ${url} I made it for ${p.name}. Tell me what you think!`
-  : `This is Zac, I build websites for trades around here. I put together a sample site for ${shortName(p.name)} so you can see what yours could look like: ${url} What do you think?`);
-export const offerMessage = (p) => ascii(`This is Zac! I build websites for trades around here and put together a sample one for ${shortName(p.name)}. Want me to send it over?`);
+  : `My name's Zac, I build websites for trades around here. I put together a sample site for ${shortName(p.name)} so you can see what yours could look like: ${url} What do you think?`);
+export const offerMessage = (p) => ascii(`My name's Zac! I build websites for trades around here and put together a sample one for ${shortName(p.name)}. Want me to send it over?`);
 const SKIP_LINK = new Set(['not_interested', 'wrong_person', 'asks_if_bot']);
 
 const VOICE = `Zac's texting style: casual, plain words, short sentences, sounds like a local contractor texting another contractor. No marketing language.`;
@@ -211,7 +211,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
 You write Zac's NEXT text in a cold conversation with a local trade business owner. Zac builds websites for local trades and has ALREADY built a sample site for their business (it is real and ready). Context the reader may not have: who Zac is, and why he is texting them.
 
 Write like a real person who just got a reply from someone he texted out of the blue:
-1. First respond to what they actually said. If they asked who this is, tell them ("This is Zac"). If they asked why, tell them. If they answered "no website" acknowledge it ("No worries", "Figured you might not"). If they confirmed it's them, just roll into it naturally.
+1. First respond to what they actually said. If they asked who this is, tell them ("My name's Zac", the way Zac says it). If they asked why, tell them. If they answered "no website" acknowledge it ("No worries", "Figured you might not"). If they confirmed it's them, just roll into it naturally.
 2. Unless Zac's earlier texts already said it, say in a few plain words who he is and why he's texting: he builds websites for trades around here and already put together a sample site for them. If the facts show a real reason (no website on Google, Facebook only, old or broken site) you may mention it briefly and honestly. Never invent anything.
 3. Then choose:
    - "offer": ask if they want to see it, with NO link. Use this when they were guarded or asked who this is, when they only confirmed the number/name, or when they don't yet know why Zac is texting. This is the default.
@@ -370,8 +370,8 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
   const learnData = () => { const ls = Object.values(load().leads).filter((L) => !L.test && L.firstSentAt); return { texts: ls.length, replies: ls.filter((L) => L.replies.some((r) => !r.bot && !r.me)).length }; };
   const studyLive = () => { const d = learnData(); return d.texts >= LEARN_MIN.texts && d.replies >= LEARN_MIN.replies; };
   const lessonsFor = (...areas) => LRN().lessons.filter((x) => areas.includes(x.area) && (x.source === 'zac' || studyLive())).map((x) => `- ${x.text}`).join('\n');
-  const examples = (n = 8) => !studyLive() ? '' : LRN().corrections.filter((c) => ['takeover', 'edit'].includes(c.kind) && c.theySaid && c.zac).slice(0, n)
-    .map((c) => c.kind === 'edit' ? `They said: "${c.theySaid.slice(0, 140)}" -> the bot drafted "${(c.botSaid || '').slice(0, 160)}" -> Zac changed it to: "${c.zac.slice(0, 200)}"` : `They said: "${c.theySaid.slice(0, 140)}" -> Zac replied: "${c.zac.slice(0, 200)}"`).join('\n');
+  const examples = (n = 8) => !studyLive() ? '' : LRN().corrections.filter((c) => ['takeover', 'edit', 'feedback'].includes(c.kind) && c.zac).slice(0, n)
+    .map((c) => c.kind === 'edit' || c.kind === 'feedback' ? `They said: "${(c.theySaid || '').slice(0, 140)}" -> the bot ${c.kind === 'edit' ? 'drafted' : 'sent'} "${(c.botSaid || '').slice(0, 160)}" -> Zac changed it to: "${c.zac.slice(0, 200)}"` : `They said: "${(c.theySaid || '').slice(0, 140)}" -> Zac replied: "${c.zac.slice(0, 200)}"`).join('\n');
   const learnBlock = (areas, withExamples) => {
     const l = lessonsFor(...areas), e = withExamples ? examples() : '';
     if (!l && !e) return '';
@@ -399,6 +399,7 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
     const opens = Object.entries(m.byOpener || {}).map(([k, v]) => `${k}: ${v.texted} texted, ${v.replied} replied, ${v.interested} interested, ${v.won} won`).join('\n');
     const corr = X.corrections.slice(0, 60).map((c) => c.kind === 'takeover' ? `TAKEOVER ${c.name}: they said "${(c.theySaid || '').slice(0, 120)}"${c.botSaid ? `, bot had said "${c.botSaid.slice(0, 120)}"` : ''}, Zac wrote "${(c.zac || '').slice(0, 200)}"`
       : c.kind === 'edit' ? `EDIT ${c.name}: they said "${(c.theySaid || '').slice(0, 120)}", bot drafted "${(c.botSaid || '').slice(0, 160)}", Zac changed it to "${(c.zac || '').slice(0, 200)}"`
+      : c.kind === 'feedback' ? `FEEDBACK ${c.name}: bot sent "${(c.botSaid || '').slice(0, 160)}"${c.zac ? `, Zac would have said "${c.zac.slice(0, 200)}"` : ''}${c.note ? `, note: ${c.note.slice(0, 200)}` : ''}`
       : c.kind === 'approve' ? `APPROVED AS-IS ${c.name}: they said "${(c.theySaid || '').slice(0, 100)}", bot reply "${(c.botSaid || '').slice(0, 140)}"`
       : c.kind === 'stage' ? `STAGE ${c.name}: Zac moved ${c.from || '?'} -> ${c.to} (bot had classified "${c.intent || '-'}")` : `${c.kind.toUpperCase()} ${c.name}${c.note ? ': ' + c.note : ''}`).join('\n');
     const out = await askClaude(env, {
@@ -427,7 +428,7 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
   function learnView() {
     const X = LRN();
     return { live: studyLive(), data: learnData(), min: LEARN_MIN, summary: X.summary, lessons: X.lessons, lastRun: X.lastRun, runs: X.runs, studied: X.studied,
-      takeovers: X.corrections.filter((c) => c.kind === 'takeover').length, edits: X.corrections.filter((c) => ['edit', 'cancel'].includes(c.kind)).length, approvals: X.corrections.filter((c) => c.kind === 'approve').length, stageFixes: X.corrections.filter((c) => c.kind === 'stage').length,
+      takeovers: X.corrections.filter((c) => c.kind === 'takeover').length, edits: X.corrections.filter((c) => ['edit', 'cancel', 'feedback'].includes(c.kind)).length, approvals: X.corrections.filter((c) => c.kind === 'approve').length, stageFixes: X.corrections.filter((c) => c.kind === 'stage').length,
       recent: X.corrections.slice(0, 8).map(({ at, kind, name, theySaid, zac, from, to }) => ({ at, kind, name, theySaid, zac, from, to })) };
   }
   function teach(text) {
@@ -440,6 +441,30 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
     const X = LRN(); const x = X.lessons.find((l) => l.id === id); if (!x) throw new Error('lesson not found');
     X.lessons = X.lessons.filter((l) => l !== x); if (x.source === 'study') X.removed.unshift(x.text); X.removed.length = Math.min(X.removed.length, 60);
     save(); return learnView();
+  }
+
+  // Zac taps a sent AI text and says how he'd have said it / why. One small Sonnet call turns it into a rule that applies right away.
+  async function feedback(id, botText, rewrite, note) {
+    load(); const L = S.leads[id]; if (!L) throw new Error('lead not found');
+    const b = ascii(String(botText || '')).slice(0, 600), r = ascii(String(rewrite || '')).trim().slice(0, 600), n = ascii(String(note || '')).trim().slice(0, 400);
+    if (!r && !n) throw new Error('write how you would say it, or a note');
+    const i = L.replies.findIndex((x) => x.text.trim() === b.trim());
+    const theySaid = (i > 0 ? L.replies.slice(0, i).filter((x) => !x.bot && !x.me).slice(-1)[0]?.text : L.replies.filter((x) => !x.bot && !x.me).slice(-1)[0]?.text) || '';
+    record('feedback', L, { theySaid, botSaid: b, zac: r && r !== b ? r : '', note: n });
+    let rule = '', area = 'replies';
+    if (env.ANTHROPIC_API_KEY) {
+      try {
+        const out = await askClaude(env, { maxTokens: 600, system: `Zac runs an SMS bot that texts local trade businesses about websites. He just gave feedback on one text the bot sent. Turn it into ONE short general rule the bot should follow from now on (under 170 characters, plain ASCII, written as an instruction, keep his exact wording when he gives a phrase). Decide the area: "first_text" if it is about the very first cold text, "triage" if it is about how to read their replies, otherwise "replies". Return ONLY JSON: {"area": "...", "rule": "..."}`,
+          user: `Bot's first text in this thread: ${L.msg || ''}\nThey said before this: ${theySaid}\nBot sent: ${b}\n${r && r !== b ? `Zac would have sent: ${r}\n` : ''}${n ? `Zac's note: ${n}` : ''}` }, fetchImpl);
+        day().spend += COST.triage;
+        const j = JSON.parse((out.match(/\{[\s\S]*\}/) || ['{}'])[0]); rule = ascii(j.rule || '').slice(0, 200); if (['first_text', 'triage', 'replies'].includes(j.area)) area = j.area;
+      } catch (e) { ev('warn', `could not turn feedback into a rule: ${e.message}`, L.id); }
+    }
+    if (!rule) rule = n || `Prefer Zac's wording: "${r.slice(0, 150)}"`;
+    if (b === L.msg && area === 'replies') area = 'first_text';
+    const X = LRN(); X.lessons.unshift({ id: `f${now().getTime().toString(36)}`, area, text: rule, evidence: `Your feedback on ${L.name}`, source: 'zac', at: now().toISOString() });
+    ev('info', `You gave feedback on ${L.name}; learned: "${rule.slice(0, 90)}"`, L.id); save();
+    return { rule, area };
   }
 
   // Called by the GHL webhook when a prospect replies.
@@ -677,11 +702,15 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
     L.unread = false; save();
     let msgs = null;
     if (L.contactId && env.GHL_TOKEN) { try { msgs = await getThread(env, L.contactId, fetchImpl); } catch (e) { ev('warn', `could not load GHL thread: ${e.message}`, L.id); } }
-    if (!msgs) { // fall back to what we have locally
+    if (!msgs || !msgs.length) { // fall back to what we have locally
       msgs = [];
       if (L.lastSentAt) msgs.push({ at: new Date(L.lastSentAt).toISOString(), text: L.msg, out: true });
       for (const r of L.replies) msgs.push({ at: r.at, text: r.text, out: !!(r.bot || r.me) });
     }
+    const mine = new Set(L.replies.filter((r) => r.me || r.edited).map((r) => r.text.trim()));
+    const aiSet = new Set([L.msg, L.zwMsg, ...L.replies.filter((r) => r.bot && !r.edited).map((r) => r.text), templateMessage(L, L.url, 1), templateMessage(L, L.url, 2)].filter(Boolean).map((t) => String(t).trim()));
+    const fb = new Set(LRN().corrections.filter((c) => c.kind === 'feedback' && c.id === L.id).map((c) => (c.botSaid || '').trim()));
+    msgs = msgs.map((m) => (!m.out ? m : { ...m, by: mine.has(m.text.trim()) ? 'you' : aiSet.has(m.text.trim()) ? 'ai' : 'you', feedback: fb.has(m.text.trim()) }));
     return { lead: leadsView().find((x) => x.id === id) || { id, name: L.name }, messages: msgs, plans: PLANS[brandOf(L)], stripe: !!stripeKey(env, brandOf(L)), n: L.replies.length };
   }
   async function reply(id, text) {
@@ -771,5 +800,5 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
       setup: { claude: !!env.ANTHROPIC_API_KEY, ghl: ghlReady(), publicUrl: !!publicUrl(), stages: !!(stage('TEXTED') && stage('RESPOND_YES')), zwPipeline: zwPipe(), webhook: !!env.GHL_WEBHOOK_SECRET, alerts: !!env.ALERT_CONTACT_ID, numberRgs: !!(env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER), numberZw: !!env.GHL_FROM_NUMBER_ZW, inWindow: canSendNow(now(), 'MA') },
     };
   }
-  return { tick, handleInbound, setSettings, resume, resolve, view, testSend, endTest, leadsView, thread, reply, setStage, setOwner, payLink, pollPayments, metrics, live, draftAction, learnNow, learnView, teach, forget, _state: () => load() };
+  return { tick, handleInbound, setSettings, resume, resolve, view, testSend, endTest, leadsView, thread, reply, setStage, setOwner, payLink, pollPayments, metrics, live, draftAction, feedback, learnNow, learnView, teach, forget, _state: () => load() };
 }

@@ -133,7 +133,7 @@ test('the reply writer can never send a bare link or a price: bad output falls b
     const fetchImpl = async (u, init = {}) => { if (u.includes('anthropic') && JSON.parse(init.body).system.includes('NEXT text in a cold conversation')) return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: JSON.stringify(b) }] }) }; return base(u, init); };
     const { ap } = setup({}, fetchImpl); ap.setSettings({ mode: 'auto' }); await ap.tick(); await ap.tick();
     await ap.handleInbound({ contactId: 'c1', text: 'who is this' });
-    const t = ap._state().pending.at(-1).text; assert.ok(!/^Figured|\$/.test(t)); assert.match(t, /This is Zac/);
+    const t = ap._state().pending.at(-1).text; assert.ok(!/^Figured|\$/.test(t)); assert.match(t, /My name's Zac/);
   }
 });
 
@@ -440,4 +440,19 @@ test('set to send: bot reply waits while Zac has the thread open; send now / edi
   await ap.handleInbound({ contactId: 'c1', text: 'sure' }); assert.equal(L.linkSent, true);
   const q = ap.live('ChIJ1').pending[0]; await ap.draftAction('ChIJ1', q.pid, 'cancel');
   assert.equal(L.linkSent, false); assert.equal(ap.live('ChIJ1').pending.length, 0);
+});
+
+test('thread labels AI vs Zac texts; feedback on an AI text becomes a live rule right away', async () => {
+  const { ap } = setup(); ap.setSettings({ mode: 'auto' }); await ap.tick(); await ap.tick();
+  const L = ap._state().leads.ChIJ1;
+  L.replies.push({ at: '2026-11-21T20:01:00Z', text: "Yes who's this" }, { at: '2026-11-21T20:02:00Z', text: "This is Zac! I build websites for trades", bot: true });
+  await ap.reply('ChIJ1', 'my names zac lol');
+  ap.setOwner('ChIJ1', 'ai');
+  const T = await ap.thread('ChIJ1');
+  const outs = T.messages.filter((m) => m.out);
+  assert.ok(outs.some((m) => m.by === 'ai' && /This is Zac/.test(m.text))); assert.ok(outs.some((m) => m.by === 'you' && /my names zac/.test(m.text)));
+  const r = await ap.feedback('ChIJ1', 'This is Zac! I build websites for trades', "My name's Zac! I build websites for trades", 'I say my names Zac');
+  assert.ok(r.rule.length > 3);
+  const v = ap.learnView(); assert.equal(v.lessons[0].source, 'zac'); assert.equal(v.live, false);
+  assert.ok((await ap.thread('ChIJ1')).messages.some((m) => m.feedback));
 });
