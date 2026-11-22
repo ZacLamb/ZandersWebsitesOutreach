@@ -23,8 +23,19 @@ export function etParts(d) {
   const p = Object.fromEntries(f.formatToParts(d).map((x) => [x.type, x.value]));
   return { date: `${p.year}-${p.month}-${p.day}`, hour: (+p.hour % 24) + +p.minute / 60, dow: p.weekday };
 }
-// Recipients are in New England: first texts only Mon-Sat 8:00-18:30 Eastern (8am is the federal TCPA earliest), never on listed holidays.
-export const canSendNow = (d) => { const t = etParts(d); return t.dow !== 'Sun' && !HOLIDAYS.has(t.date) && t.hour >= 8 && t.hour < 18.5; };
+// Recipients are in New England. Sales texts go out 7 days a week inside each state's legal window (local = Eastern):
+// federal TCPA 8am-9pm; we stop at 6:30pm. Connecticut starts 9am. Rhode Island: Mon-Fri 9-6, Sat 10-5, never Sunday or holidays.
+// Sundays everywhere else start at 10am (courtesy). Never on listed holidays.
+export const stateOf = (town) => (String(town || '').match(/,\s*([A-Z]{2})\b/) || [])[1] || '';
+export function sendWindow(dow, state) {
+  if (state === 'RI') return dow === 'Sun' ? null : dow === 'Sat' ? [10, 17] : [9, 18];
+  const start = dow === 'Sun' ? 10 : state === 'CT' ? 9 : 8;
+  return [start, 18.5];
+}
+export const canSendNow = (d, state = '') => {
+  const t = etParts(d); if (HOLIDAYS.has(t.date)) return false;
+  const w = sendWindow(t.dow, state); return !!w && t.hour >= w[0] && t.hour < w[1];
+};
 export const canReplyNow = (d) => { const t = etParts(d); return !HOLIDAYS.has(t.date) && t.hour >= 8 && t.hour < 21; };
 
 const OPT_OUT = /^\s*(stop|stopall|unsubscribe|cancel|end|quit|optout|opt out)\W*$|\b(remove me|do not text|don'?t text|dont text|stop (texting|messaging|contacting|calling)|take me off|opt out)\b/i;
@@ -227,6 +238,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     save(); return true;
   }
 
+  const okNow = (x) => canSendNow(now(), stateOf(x.town));
   async function sendOne() {
     load();
     const d = day();
@@ -241,11 +253,11 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
       done.status = 'no_response'; ev('info', `No response from ${done.name}; moved to Zander's Websites (text goes out in ${S.settings.zwDelayDays} days)`, done.id);
       await toZander(done); save(); return true;
     }
-    const due = Object.values(S.leads).find((x) => quiet(x) && ((x.step === 1 && t - x.lastSentAt >= 3 * DAY) || (x.step === 2 && t - x.lastSentAt >= 4 * DAY)));
+    const due = Object.values(S.leads).find((x) => okNow(x) && quiet(x) && ((x.step === 1 && t - x.lastSentAt >= 3 * DAY) || (x.step === 2 && t - x.lastSentAt >= 4 * DAY)));
     let L = due, step = due ? due.step : 0;
     // Zander's Websites second touch: separate brand, separate number, after RGS got a no / no answer.
     if (!L && env.GHL_FROM_NUMBER_ZW) {
-      const z = Object.values(S.leads).find((x) => x.zwDueAt && x.zwDueAt <= t && !x.zwSentAt && x.status !== 'opted_out' && x.contactId);
+      const z = Object.values(S.leads).find((x) => okNow(x) && x.zwDueAt && x.zwDueAt <= t && !x.zwSentAt && x.status !== 'opted_out' && x.contactId);
       if (z) {
         if (!room(2 * COST.sms + COST.msg)) return false;
         try {
@@ -261,7 +273,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
         save(); return true;
       }
     }
-    if (!L) { L = Object.values(S.leads).find((x) => x.status === 'drafted'); step = 0; }
+    if (!L) { L = Object.values(S.leads).find((x) => x.status === 'drafted' && okNow(x)); step = 0; }
     if (!L) return false;
     // drafts made before personalization get researched + rewritten before they go out
     if (step === 0 && !L.researched) { if (!room(COST.msg + COST.research + 2 * COST.sms)) return false; await personalize(L); save(); }
@@ -421,7 +433,7 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
       if (deps.readyCount(new Set(Object.keys(S.leads)), new Set(S.optOut)) < 15 && d.searches < 60 && !deps.jobRunning() && room(60 * COST.search) && env.GOOGLE_PLACES_KEY) {
         if (deps.startFind(60)) { d.searches += 60; d.spend += 60 * COST.search; ev('search', 'Started a 60-search batch to find more leads'); save(); }
       }
-      if (S.settings.mode === 'auto' && ghlReady() && canSendNow(now()) && now().getTime() >= S.nextSendAt) await sendOne();
+      if (S.settings.mode === 'auto' && ghlReady() && canSendNow(now(), 'MA') && now().getTime() >= S.nextSendAt) await sendOne();
     } catch (e) { ev('error', `tick: ${e.message}`); save(); } finally { busy = false; }
   }
 
@@ -577,7 +589,7 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
       needsYou: leads.filter((L) => L.needsYou).map((L) => ({ id: L.id, name: L.name, phone: L.phone, contactId: L.contactId, last: L.replies.filter((r) => !r.bot).slice(-1)[0]?.text || '', intent: L.lastIntent })),
       drafts: leads.filter((L) => L.status === 'drafted').slice(0, 8).map((L) => ({ id: L.id, name: L.name, msg: L.msg, url: L.url, why: L.why || '', variant: VARIANTS[L.variant]?.label || '', opener: OPENERS[L.opener]?.label || '' })),
       testActive: leads.some((L) => L.test), testLead: (leads.find((L) => L.test) || null) && (({ msg, url, replies, lastIntent, brand }) => ({ msg, url, replies, lastIntent, brand }))(leads.find((L) => L.test)), zwScheduled: leads.filter((L) => L.zwDueAt && !L.zwSentAt).length, counts: leads.reduce((a, L) => ((a[L.status] = (a[L.status] || 0) + 1), a), {}), events: S.events.slice(0, 40),
-      setup: { claude: !!env.ANTHROPIC_API_KEY, ghl: ghlReady(), publicUrl: !!publicUrl(), stages: !!(stage('TEXTED') && stage('RESPOND_YES')), zwPipeline: zwPipe(), webhook: !!env.GHL_WEBHOOK_SECRET, alerts: !!env.ALERT_CONTACT_ID, numberRgs: !!(env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER), numberZw: !!env.GHL_FROM_NUMBER_ZW, inWindow: canSendNow(now()) },
+      setup: { claude: !!env.ANTHROPIC_API_KEY, ghl: ghlReady(), publicUrl: !!publicUrl(), stages: !!(stage('TEXTED') && stage('RESPOND_YES')), zwPipeline: zwPipe(), webhook: !!env.GHL_WEBHOOK_SECRET, alerts: !!env.ALERT_CONTACT_ID, numberRgs: !!(env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER), numberZw: !!env.GHL_FROM_NUMBER_ZW, inWindow: canSendNow(now(), 'MA') },
     };
   }
   return { tick, handleInbound, setSettings, resume, resolve, view, testSend, endTest, leadsView, thread, reply, setStage, payLink, pollPayments, metrics, _state: () => load() };
