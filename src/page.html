@@ -43,14 +43,28 @@ textarea{width:100%;min-height:70px;background:#0c0e13;color:var(--tx);border:1p
 .pcard{background:#0c0e13;border:1px solid var(--line);border-radius:10px;padding:8px;margin-bottom:6px;cursor:pointer;font-size:13px}.pcard:hover{border-color:var(--ac)}.pcard b{font-size:14px}
 table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em}td.r,th.r{text-align:right}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-@media(max-width:760px){.inbox{grid-template-columns:1fr}.two{grid-template-columns:1fr}.ilist{max-height:34vh}nav.tabs{margin-left:0;width:100%;order:3}}
+@media(max-width:760px){
+ header{padding:10px 12px;gap:6px}.today{margin-left:0;width:100%;order:2;font-size:12px}
+ nav.tabs{margin-left:0;width:100%;order:3;overflow-x:auto;-webkit-overflow-scrolling:touch}nav.tabs button{flex:1;white-space:nowrap;padding:9px 8px}
+ main{padding:10px}.card{padding:12px;border-radius:12px}
+ input,select,textarea{font-size:16px}
+ .inbox{display:block;min-height:0}.ilist{max-height:none;padding:4px}.ithread{display:none;max-height:none}
+ body.mthread .ilist{display:none}body.mthread .ithread{display:flex;position:fixed;inset:0;z-index:20;margin:0;border-radius:0;border:0;padding:12px 12px calc(12px + env(safe-area-inset-bottom))}
+ .ithread .msgs{flex:1;min-height:0}.msg{max-width:88%}
+ .back{display:inline-block!important}
+ .board{scroll-snap-type:x mandatory}.col{flex:0 0 86vw;scroll-snap-align:start;max-height:70vh}
+ .two{grid-template-columns:1fr}table{font-size:13px}th,td{padding:6px 4px}
+ #v-metrics .card{overflow-x:auto}
+ .grid{grid-template-columns:repeat(2,1fr)}
+}
+.back{display:none}
 </style></head><body>
 <header><b>ZW Outreach</b><span id="mode" class="mode off">OFF</span>
 <nav class="tabs"><button data-v="home" class="on">Home</button><button data-v="inbox">Inbox<span class="dot" id="unreadDot" style="display:none"></span></button><button data-v="pipe">Pipeline</button><button data-v="metrics">Metrics</button></nav>
 <span class="today" id="todayTop"></span></header>
 <main id="main">
 <section id="v-inbox" style="display:none"><div class="inbox"><div class="card ilist"><input id="iq" placeholder="Search leads…" style="width:100%;margin-bottom:6px"><div id="ilist"></div></div>
-  <div class="card ithread" id="ithread"><div class="mut">Pick a conversation on the left.</div></div></div></section>
+  <div class="card ithread" id="ithread"><div class="mut">Pick a conversation.</div></div></div></section>
 <section id="v-pipe" style="display:none"><div class="row" style="margin-bottom:10px"><button id="pRgs" class="p">RGS Outreach</button><button id="pZw">Zander's Websites Outreach</button><span class="small mut">Click a card to open the conversation. Move stages from inside the conversation.</span></div><div class="board" id="board"></div></section>
 <section id="v-metrics" style="display:none"><div id="metrics"></div></section>
 <section id="v-home">
@@ -142,7 +156,7 @@ function render(){if(!S||!A)return;
   A.needsYou.forEach(x=>{const d=el('div','lead');const mm=el('div','m');mm.append(el('b',null,x.name),el('div','small','“'+x.last+'”'),el('div','small mut','Bot read it as: '+x.intent));
     const a=el('button','p','Open');a.onclick=()=>openThread(x.id);
     const b=el('button',null,'Done');b.onclick=async()=>{A=await post('/api/autopilot/resolve',{id:x.id});render()};d.append(mm,a,b);h.append(d)});
-  const t=A.today;$('todayTop').textContent=t.texts+' texts · '+t.replies+' replies · $'+t.spend.toFixed(2)+' today';
+  const t=A.today;$('todayTop').textContent=t.texts+' texts · '+t.replies+(t.replies===1?' reply':' replies')+' · $'+t.spend.toFixed(2)+' today';
   $('stats').replaceChildren(...[[t.texts+' / '+A.effCap,'Texts today'],[t.replies,'Replies'],[t.optouts,'Opt-outs'],['$'+t.spend.toFixed(2)+' / $'+A.settings.dailyBudget,'Spent'],[A.zwScheduled,"Queued for Zander's"],[(A.counts.sent||0)+(A.counts.zw_sent||0),'Waiting on reply']].map(([v,l])=>{const d=el('div','stat');d.append(el('b',null,String(v)),el('span','small mut',l));return d}));
   $('window').textContent=A.setup.inWindow?'Inside the sending window right now.':'Outside the sending window (Mon–Sat 9am–6:30pm Eastern). Live texts wait until it opens.';
   for(const [id,v] of [['sBudget',A.settings.dailyBudget],['sCap',A.settings.dailyTextCap],['sOffer',A.settings.offer],['sOfferZw',A.settings.offerZw]])if(document.activeElement!==$(id))$(id).value=v??'';
@@ -173,7 +187,7 @@ const money=n=>'$'+(+n||0).toLocaleString(undefined,{minimumFractionDigits:0,max
 const ago=t=>{if(!t)return'';const m=(Date.now()-t)/6e4;return m<60?Math.max(1,m|0)+'m':m<1440?(m/60|0)+'h':(m/1440|0)+'d'};
 const fmtT=s=>{const d=new Date(s);return isNaN(d)?'':d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})};
 document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick=()=>show(b.dataset.v));
-function show(v){view=v;document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+function show(v){view=v;document.body.classList.remove('mthread');document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   for(const x of ['home','inbox','pipe','metrics'])$('v-'+x).style.display=x===v?'block':'none';
   $('main').classList.toggle('wide',v!=='home');if(v==='metrics')loadMetrics();else if(v!=='home')loadLeadsW()}
 async function loadLeadsW(){try{L=await (await fetch('/api/leads')).json()}catch{return}
@@ -189,7 +203,8 @@ function renderInbox(){const q=$('iq').value.toLowerCase(),box=$('ilist');box.re
     r.append(n,el('div','s',stageName(x.pipe,x.stage)+(x.last?' · “'+x.last+'”':'')));r.onclick=()=>openThread(x.id);box.append(r)})}
 async function openThread(id){cur=id;if(view!=='inbox')show('inbox');const th=$('ithread');th.replaceChildren(el('div','mut','Loading conversation…'));
   let T;try{const r=await fetch('/api/thread/'+encodeURIComponent(id));T=await r.json();if(!r.ok)throw new Error(T.error)}catch(e){th.replaceChildren(el('div','bad',e.message));return}
-  const x=T.lead;th.replaceChildren();
+  const x=T.lead;th.replaceChildren();document.body.classList.add('mthread');
+  const bk=el('button','back','← Back');bk.onclick=()=>{document.body.classList.remove('mthread');cur=null;renderInbox()};th.append(bk);
   const hd=el('div','row');hd.append(el('b',null,x.name),el('span','chip '+x.brand,x.brand==='zw'?"Zander's":'RGS'));if(x.paid)hd.append(el('span','chip paid','PAID '+money(x.paid.amount)));
   const sp=el('span');sp.style.flex='1';hd.append(sp);
   const sel=el('select');(L.stages[x.pipe]||[]).forEach(([k,n])=>{const o=el('option',null,n);o.value=k;if(k===x.stage)o.selected=true;sel.append(o)});
