@@ -1,8 +1,8 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ZW Outreach</title><style>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ZW Outreach</title><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Outreach"><meta name="theme-color" content="#0f1115"><style>
 :root{--bg:#0f1115;--card:#171a21;--line:#262b36;--tx:#e8eaf0;--mut:#8b93a7;--ac:#4f8cff;--ok:#2fbf71;--bad:#ef5b5b;--warn:#f0b429}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,sans-serif}
-header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+header{padding-top:max(12px,env(safe-area-inset-top))!important;position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 header b{font-size:17px}.mode{padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid var(--line)}
 .mode.off{color:var(--mut)}.mode.draft{color:var(--warn);border-color:var(--warn)}.mode.auto{color:var(--ok);border-color:var(--ok)}
 .today{margin-left:auto;font-size:13px;color:var(--mut)}
@@ -113,7 +113,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;p
 const $=id=>document.getElementById(id),H={'X-ZW':'1','Content-Type':'application/json'};
 const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
 function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>t.style.display='none',4500)}
-async function post(p,b){const r=await fetch(p,{method:'POST',headers:H,body:JSON.stringify(b||{})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('Error '+r.status));return j}
+async function post(p,b){const r=await fetch(p,{method:'POST',headers:H,body:JSON.stringify(b||{})});if(r.status===401){location.href='/login';return}const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('Error '+r.status));return j}
 let S=null,A=null,leads=[],sel=new Set(),wasRunning=false;
 
 $('pick').onclick=()=>$('file').click();

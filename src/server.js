@@ -142,10 +142,32 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, await autopilot.handleInbound({ contactId, text }));
     } catch (e) { return send(res, 400, { error: e.message }); }
   }
-  // Basic auth on everything else
+  // Public app shell files (icon + manifest) so the dashboard works as a home-screen app.
+  const pub = url.pathname.match(/^\/(manifest\.json|apple-touch-icon\.png|icon-192\.png|icon-512\.png)$/);
+  if (req.method === 'GET' && pub) {
+    res.writeHead(200, { 'Content-Type': pub[1].endsWith('.json') ? 'application/manifest+json' : 'image/png', 'Cache-Control': 'public, max-age=86400' });
+    return res.end(fs.readFileSync(path.join(ROOT, 'public', pub[1])));
+  }
+  // Sign-in: a remembered cookie (home-screen apps can't show the browser password popup). Basic auth still works.
+  const SESSION = crypto.createHmac('sha256', PASSWORD).update('zw-session-v1').digest('hex');
+  const cookieOk = (req.headers.cookie || '').split(/;\s*/).some((c) => c === `zw=${SESSION}`);
+  if (url.pathname === '/login' && req.method === 'POST') {
+    const body = new URLSearchParams(await readBody(req, 1e4));
+    if (safeEq(body.get('pw') || '', PASSWORD)) {
+      res.writeHead(303, { 'Set-Cookie': `zw=${SESSION}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=31536000`, Location: '/' }); return res.end();
+    }
+    res.writeHead(303, { Location: '/login?bad=1' }); return res.end();
+  }
+  if (url.pathname === '/logout') { res.writeHead(303, { 'Set-Cookie': 'zw=; Path=/; Max-Age=0', Location: '/login' }); return res.end(); }
   const m = (req.headers.authorization || '').match(/^Basic (.+)$/);
   const [, pw = ''] = m ? Buffer.from(m[1], 'base64').toString().match(/^[^:]*:(.*)$/) || [] : [];
-  if (!m || !safeEq(pw, PASSWORD)) { res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="ZW Prospector"' }); return res.end('Auth required'); }
+  if (!cookieOk && !(m && safeEq(pw, PASSWORD))) {
+    if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/login')) {
+      return send(res, 200, `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ZW Outreach</title><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Outreach"><meta name="theme-color" content="#0f1115"><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f1115;color:#e8eaf0;font:16px system-ui,sans-serif}form{background:#171a21;border:1px solid #262b36;border-radius:16px;padding:24px;width:min(340px,88vw)}input,button{width:100%;box-sizing:border-box;font:inherit;font-size:16px;padding:12px;border-radius:10px;margin-top:10px}input{background:#0c0e13;color:#e8eaf0;border:1px solid #262b36}button{background:#4f8cff;color:#fff;border:0;font-weight:600}.bad{color:#ef5b5b;font-size:14px}</style></head><body><form method="post" action="/login"><b style="font-size:20px">ZW Outreach</b>${url.searchParams.get('bad') ? '<div class="bad">Wrong password, try again.</div>' : ''}<input type="password" name="pw" placeholder="Password" autocomplete="current-password" autofocus><button>Sign in</button></form></body></html>`, 'text/html; charset=utf-8');
+    }
+    if (req.method === 'GET' && !url.pathname.startsWith('/api/') && !url.pathname.startsWith('/out/')) { res.writeHead(303, { Location: '/login' }); return res.end(); }
+    return send(res, 401, { error: 'sign in again' });
+  }
   try {
     if (req.method === 'GET' && url.pathname === '/') return send(res, 200, fs.readFileSync(path.join(ROOT, 'src', 'page.html'), 'utf8'), 'text/html; charset=utf-8');
     if (req.method === 'GET' && url.pathname === '/api/status') {
