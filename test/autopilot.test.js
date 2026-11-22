@@ -8,11 +8,12 @@ import { sanitize, withBanner } from '../src/sites.js';
 
 const SAT_3PM_ET = new Date('2026-11-21T20:00:00Z');
 
-test('send window: Mon-Sat 9-18:30 ET, no Sundays or holidays', () => {
+test('send window: Mon-Sat 8-18:30 ET, no Sundays or holidays', () => {
   assert.equal(canSendNow(SAT_3PM_ET), true);
   assert.equal(canSendNow(new Date('2026-11-22T20:00:00Z')), false); // Sunday
   assert.equal(canSendNow(new Date('2026-11-21T23:30:00Z')), false); // 6:30pm
-  assert.equal(canSendNow(new Date('2026-11-21T13:00:00Z')), false); // 8am
+  assert.equal(canSendNow(new Date('2026-11-21T13:00:00Z')), true); // 8am
+  assert.equal(canSendNow(new Date('2026-11-21T12:30:00Z')), false); // 7:30am
   assert.equal(canSendNow(new Date('2026-11-26T17:00:00Z')), false); // Thanksgiving
   assert.equal(canReplyNow(new Date('2026-11-22T20:00:00Z')), true);
 });

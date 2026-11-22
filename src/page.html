@@ -152,7 +152,7 @@ function render(){if(!S||!A)return;
     const b=el('button',null,'Done');b.onclick=async()=>{A=await post('/api/autopilot/resolve',{id:x.id});render()};d.append(mm,a,b);h.append(d)});
   const t=A.today;$('todayTop').textContent=t.texts+' texts · '+t.replies+(t.replies===1?' reply':' replies')+' · $'+t.spend.toFixed(2)+' today';
   $('stats').replaceChildren(...[[t.texts+' / '+A.effCap,'Texts today'],[t.replies,'Replies'],[t.optouts,'Opt-outs'],['$'+t.spend.toFixed(2)+' / $'+A.settings.dailyBudget,'Spent'],[A.zwScheduled,"Queued for Zander's"],[(A.counts.sent||0)+(A.counts.zw_sent||0),'Waiting on reply']].map(([v,l])=>{const d=el('div','stat');d.append(el('b',null,String(v)),el('span','small mut',l));return d}));
-  $('window').textContent=A.setup.inWindow?'Inside the sending window right now.':'Outside the sending window (Mon–Sat 9am–6:30pm Eastern). Live texts wait until it opens.';
+  $('window').textContent=A.setup.inWindow?'Inside the sending window right now.':'Outside the sending window (Mon–Sat 8am–6:30pm Eastern). Live texts wait until it opens.';
   for(const [id,v] of [['sBudget',A.settings.dailyBudget],['sCap',A.settings.dailyTextCap],['sOffer',A.settings.offer],['sOfferZw',A.settings.offerZw]])if(document.activeElement!==$(id))$(id).value=v??'';
   $('keys').replaceChildren(...[['Google search key',S.env.google],['GHL connection',S.env.ghl],['Claude key',A.setup.claude],['RGS number',A.setup.numberRgs],["Zander's number",A.setup.numberZw],['Reply workflow secret',A.setup.webhook],['Alerts to your cell',A.setup.alerts]].map(([n,ok])=>el('div',ok?'ok':'bad',(ok?'✓ ':'✗ ')+n)));
   $('events').replaceChildren(...(A.events||[]).slice(0,40).map(e=>el('div',null,e.at.slice(5,16).replace('T',' ')+' · '+e.text)));

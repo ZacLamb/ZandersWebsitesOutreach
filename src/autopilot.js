@@ -23,8 +23,8 @@ export function etParts(d) {
   const p = Object.fromEntries(f.formatToParts(d).map((x) => [x.type, x.value]));
   return { date: `${p.year}-${p.month}-${p.day}`, hour: (+p.hour % 24) + +p.minute / 60, dow: p.weekday };
 }
-// Recipients are in New England: first texts only Mon-Sat 9:00-18:30 Eastern, never on listed holidays.
-export const canSendNow = (d) => { const t = etParts(d); return t.dow !== 'Sun' && !HOLIDAYS.has(t.date) && t.hour >= 9 && t.hour < 18.5; };
+// Recipients are in New England: first texts only Mon-Sat 8:00-18:30 Eastern (8am is the federal TCPA earliest), never on listed holidays.
+export const canSendNow = (d) => { const t = etParts(d); return t.dow !== 'Sun' && !HOLIDAYS.has(t.date) && t.hour >= 8 && t.hour < 18.5; };
 export const canReplyNow = (d) => { const t = etParts(d); return !HOLIDAYS.has(t.date) && t.hour >= 8 && t.hour < 21; };
 
 const OPT_OUT = /^\s*(stop|stopall|unsubscribe|cancel|end|quit|optout|opt out)\W*$|\b(remove me|do not text|don'?t text|dont text|stop (texting|messaging|contacting|calling)|take me off|opt out)\b/i;
@@ -256,7 +256,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
           z.inZwQueue = false; await move(z, 'TEXTED');
           try { await addTags(env, z.contactId, ['zw-zander-pitch'], fetchImpl); } catch {}
           ev('send', `Zander's Websites text to ${z.name}`, z.id);
-          S.nextSendAt = t + ((9.5 * 3600e3) / effCap()) * (0.7 + Math.random() * 0.6);
+          S.nextSendAt = t + ((10.5 * 3600e3) / effCap()) * (0.7 + Math.random() * 0.6);
         } catch (e) { d.errors++; ev('error', `Zander send failed for ${z.name}: ${e.message}`, z.id); }
         save(); return true;
       }
@@ -279,7 +279,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
       L.step = step + 1; L.lastSentAt = now().getTime(); L.status = 'sent'; if (step === 0) L.firstSentAt = L.lastSentAt;
       if (step === 0) await move(L, 'TEXTED');
       ev('send', `${step === 0 ? 'Texted' : 'Follow-up ' + step + ' to'} ${L.name}`, L.id);
-      const gap = (9.5 * 3600e3) / effCap(); S.nextSendAt = t + gap * (0.7 + Math.random() * 0.6);
+      const gap = (10.5 * 3600e3) / effCap(); S.nextSendAt = t + gap * (0.7 + Math.random() * 0.6);
     } catch (e) {
       d.errors++; ev('error', `Send failed for ${L.name}: ${e.message}`, L.id);
       if (/landline|invalid|not a valid|cannot be sent/i.test(e.message)) { L.status = 'bad_number'; await move(L, 'BAD_NUMBER'); }
