@@ -1,5 +1,5 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>ZW Outreach</title><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Outreach"><meta name="theme-color" content="#0f1115"><meta name="format-detection" content="telephone=no"><style>
+<title>ZW Outreach</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Outreach"><meta name="theme-color" content="#0f1115"><meta name="format-detection" content="telephone=no"><style>
 :root{--bg:#0f1115;--card:#171a21;--line:#262b36;--tx:#e8eaf0;--mut:#8b93a7;--ac:#4f8cff;--ok:#2fbf71;--bad:#ef5b5b;--warn:#f0b429}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,sans-serif}
 header{padding-top:max(12px,env(safe-area-inset-top))!important;position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -58,14 +58,79 @@ table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;p
  .grid{grid-template-columns:repeat(2,1fr)}
 }
 .back{display:none}
+
+/* ---------- app redesign: dispatch-board dark, mobile first ---------- */
+:root{--bg:#0b0d10;--card:#14171c;--card2:#1a1e25;--line:#232832;--tx:#eef0f4;--mut:#8a92a3;--ac:#ff7a1a;--ac2:#ffa45c;--rgs:#6ea8ff;--zw:#ffc145;--ok:#34d399;--bad:#f2555a;--warn:#ffc145;--r:16px}
+body{font-family:Figtree,system-ui,sans-serif;background:radial-gradient(1200px 500px at 50% -200px,#1b1410 0%,var(--bg) 60%) fixed;-webkit-font-smoothing:antialiased}
+b,h2,.brand b{font-family:'Bricolage Grotesque',Figtree,sans-serif}
+header{display:flex;align-items:center;gap:10px;flex-wrap:nowrap;background:rgba(11,13,16,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:8px}.brand b{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.logo{width:28px;height:28px;border-radius:9px;background:linear-gradient(135deg,var(--ac),#ff4d1a);display:grid;place-items:center;font:800 12px 'Bricolage Grotesque';color:#1a0a00}
+.mode{font-size:11px;letter-spacing:.06em;padding:2px 8px}.mode.auto{color:var(--ok);border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.08)}
+.mode.auto:before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ok);margin-right:5px;vertical-align:1px;animation:pulse 2s infinite}
+@keyframes pulse{50%{opacity:.25}}
+.today{font-size:12px;color:var(--mut);margin-left:auto}
+nav.tabs{display:flex;gap:2px;margin-left:16px}nav.tabs button{display:flex;align-items:center;gap:6px;background:none;border:0;color:var(--mut);padding:8px 12px;border-radius:10px;position:relative;font-weight:600}
+nav.tabs button svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+nav.tabs button.on{color:var(--tx);background:var(--card2)}nav.tabs button.on svg{stroke:var(--ac)}
+.dot{background:var(--ac);color:#1a0a00;min-width:18px;height:18px;line-height:18px;border-radius:9px;font-size:11px;padding:0 5px}
+h2{font-size:12px;letter-spacing:.12em;color:var(--mut);font-weight:600;margin:22px 4px 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r)}
+button,.btn{border-radius:12px;font-weight:600;border-color:var(--line);background:var(--card2)}button.p{background:var(--ac);border-color:var(--ac);color:#1a0a00}button.g{background:var(--ok);border-color:var(--ok);color:#03150d}
+.search{width:100%;border-radius:12px;background:var(--card2);border:1px solid transparent;padding:11px 14px;font-size:16px}
+.ilist{padding:0}.irow{display:flex;gap:12px;align-items:center;padding:12px 10px;border-radius:14px;border:0;margin:2px 0}
+.irow:active,.irow:hover{background:var(--card2)}.irow.on{background:var(--card2)}
+.av{flex:0 0 44px;height:44px;border-radius:50%;display:grid;place-items:center;font:800 16px 'Bricolage Grotesque';color:#0b0d10;position:relative}
+.av.rgs{background:linear-gradient(135deg,#9cc4ff,#4f86e8)}.av.zw{background:linear-gradient(135deg,#ffe08a,#ffb020)}
+.av .u{position:absolute;right:-1px;top:-1px;width:13px;height:13px;border-radius:50%;background:var(--ac);border:2px solid var(--bg)}
+.irow .m{flex:1;min-width:0}.irow .top{display:flex;align-items:baseline;gap:8px}.irow .nm{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.irow .tm{font-size:12px;color:var(--mut)}.irow .pv{color:var(--mut);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}.irow.unread .nm{color:#fff}.irow.unread .pv{color:var(--tx)}
+.tag{font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:2px 7px;border-radius:999px;background:var(--card2);color:var(--mut);white-space:nowrap}.tag.hot{background:rgba(255,122,26,.15);color:var(--ac2)}.tag.paid{background:rgba(52,211,153,.15);color:var(--ok)}
+.empty{text-align:center;color:var(--mut);padding:40px 20px;font-size:14px}
+.ithread{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:0;overflow:hidden}
+.thead{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);background:rgba(20,23,28,.9)}
+.thead .back{background:none;border:0;color:var(--ac);font-size:28px;line-height:1;padding:0 6px 0 0}.thead .who{flex:1;min-width:0}.thead .who b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:17px}.thead .who span{font-size:12px;color:var(--mut)}
+.tbar{display:flex;gap:8px;overflow-x:auto;padding:10px 14px;border-bottom:1px solid var(--line);scrollbar-width:none}.tbar::-webkit-scrollbar{display:none}
+.tbar>*{flex:0 0 auto}.pillbtn{font-size:13px;padding:7px 12px;border-radius:999px;background:var(--card2);border:1px solid var(--line);color:var(--tx);text-decoration:none;font-weight:600;white-space:nowrap}
+.pillbtn.call{background:rgba(52,211,153,.12);border-color:rgba(52,211,153,.35);color:var(--ok)}select.pillbtn{appearance:none;-webkit-appearance:none;padding-right:26px;background-image:linear-gradient(45deg,transparent 50%,var(--mut) 50%),linear-gradient(135deg,var(--mut) 50%,transparent 50%);background-position:calc(100% - 14px) 50%,calc(100% - 9px) 50%;background-size:5px 5px;background-repeat:no-repeat}
+.why{font-size:12px;color:var(--mut);padding:8px 16px 0}
+.msgs{padding:14px;gap:4px}.msg{border-radius:20px;padding:9px 13px;font-size:15px;line-height:1.35;max-width:80%}.msg.in{background:var(--card2);border-bottom-left-radius:6px}.msg.out{background:linear-gradient(160deg,#ff8a2e,#ff6a10);color:#1a0a00;border-bottom-right-radius:6px}.msg.out .t{color:#3a1800}.msg .t{font-size:10.5px;opacity:.75}
+.compose{border-top:1px solid var(--line);padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:rgba(20,23,28,.95)}
+.compose .bar{display:flex;gap:8px;align-items:flex-end}.compose textarea{min-height:42px;max-height:140px;border-radius:21px;padding:10px 14px;resize:none;background:var(--bg);font-size:16px;line-height:1.3;flex:1}
+.compose .sendb{width:42px;height:42px;border-radius:50%;padding:0;background:var(--ac);border:0;color:#1a0a00;font-size:20px;font-weight:800;flex:0 0 42px}
+.compose .payb{width:42px;height:42px;border-radius:50%;padding:0;flex:0 0 42px;font-size:18px}
+.paysheet{display:none;flex-direction:column;gap:6px;margin-bottom:8px}.paysheet.open{display:flex}.paysheet button{text-align:left;font-size:14px;padding:11px 14px}.paysheet .mut{font-size:12px}
+.seg{display:flex;background:var(--card2);border-radius:12px;padding:3px;gap:3px;max-width:360px}.seg button{flex:1;border:0;background:none;color:var(--mut);padding:8px;border-radius:9px}.seg button.on{background:var(--card);color:var(--tx);box-shadow:0 1px 0 rgba(255,255,255,.04)}
+.stagechips{display:flex;gap:8px;overflow-x:auto;padding:12px 0;scrollbar-width:none}.stagechips::-webkit-scrollbar{display:none}
+.stagechips button{flex:0 0 auto;border-radius:999px;font-size:13px;padding:7px 13px;white-space:nowrap}.stagechips button.on{background:var(--tx);color:var(--bg);border-color:var(--tx)}.stagechips button i{font-style:normal;opacity:.6;margin-left:5px}
+.plist .irow{background:var(--card);border:1px solid var(--line);margin-bottom:8px}
+.stat{background:var(--card2);border:0;border-radius:14px}.stat b{font-family:'Bricolage Grotesque';font-size:24px;letter-spacing:-.02em}
+#toast{border-radius:14px;bottom:calc(84px + env(safe-area-inset-bottom));background:#2a2f38}
+@media(min-width:761px){main.wide{max-width:1180px}.inbox{grid-template-columns:360px 1fr}.ithread{display:flex;flex-direction:column;height:78vh}}
+@media(max-width:760px){
+ header{padding:calc(8px + env(safe-area-inset-top)) 16px 10px!important;flex-wrap:wrap}.today{width:auto;margin-left:auto;order:0;font-size:11.5px}
+ nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;margin:0;width:auto;justify-content:space-around;background:rgba(14,16,20,.92);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom));overflow:visible;order:9}
+ nav.tabs button{flex-direction:column;gap:3px;font-size:10.5px;padding:6px 4px;flex:1;background:none!important;font-weight:600}nav.tabs button svg{width:23px;height:23px}
+ nav.tabs .dot{position:absolute;top:2px;left:calc(50% + 6px);font-size:10px;min-width:16px;height:16px;line-height:16px}
+ main{padding:8px 12px calc(92px + env(safe-area-inset-bottom))}
+ .ithread{display:none}body.mthread .ithread{display:flex;flex-direction:column;position:fixed;inset:0;z-index:40;border-radius:0;border:0;padding:0;background:var(--bg)}
+ body.mthread .thead{padding-top:calc(10px + env(safe-area-inset-top))}
+ body.mthread nav.tabs{display:none}
+ .msg{max-width:84%}
+}
 </style></head><body>
-<header><b>ZW Outreach</b><span id="mode" class="mode off">OFF</span>
-<nav class="tabs"><button data-v="inbox" class="on">Inbox<span class="dot" id="unreadDot" style="display:none"></span></button><button data-v="pipe">Pipeline</button><button data-v="metrics">Metrics</button><button data-v="leads">Leads</button><button data-v="settings">Settings</button></nav>
-<span class="today" id="todayTop"></span></header>
+<header><div class="brand"><span class="logo">ZW</span><b>Outreach</b><span id="mode" class="mode off">OFF</span></div><span class="today" id="todayTop"></span>
+<nav class="tabs">
+<button data-v="inbox" class="on"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4z"/></svg><span>Inbox</span><span class="dot" id="unreadDot" style="display:none"></span></button>
+<button data-v="pipe"><svg viewBox="0 0 24 24"><path d="M4 5h4v14H4zM10 5h4v9h-4zM16 5h4v5h-4z"/></svg><span>Pipeline</span></button>
+<button data-v="metrics"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Metrics</span></button>
+<button data-v="leads"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg><span>Leads</span></button>
+<button data-v="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg><span>Settings</span></button>
+</nav></header>
 <main id="main">
-<section id="v-inbox"><div class="inbox"><div class="card ilist"><input id="iq" placeholder="Search leads…" style="width:100%;margin-bottom:6px"><div id="ilist"></div></div>
-  <div class="card ithread" id="ithread"><div class="mut">Pick a conversation.</div></div></div></section>
-<section id="v-pipe" style="display:none"><div class="row" style="margin-bottom:10px"><button id="pRgs" class="p">RGS Outreach</button><button id="pZw">Zander's Websites Outreach</button><span class="small mut">Click a card to open the conversation. Move stages from inside the conversation.</span></div><div class="board" id="board"></div></section>
+<section id="v-inbox"><div class="inbox"><div class="ilist"><input id="iq" class="search" placeholder="Search conversations"><div id="ilist"></div></div>
+  <div class="ithread" id="ithread"><div class="mut">Pick a conversation.</div></div></div></section>
+<section id="v-pipe" style="display:none"><div class="seg"><button id="pRgs" class="on">RGS</button><button id="pZw">Zander's</button></div><div class="stagechips" id="stagechips"></div><div id="board" class="plist"></div></section>
 <section id="v-metrics" style="display:none"><div id="metrics"></div></section>
 <div id="pausedBox" class="card alert" style="display:none"></div>
 <div id="hotWrap" style="display:none"><h2>🔥 Needs you</h2><div class="card hot" id="hot"></div></div>
@@ -192,42 +257,53 @@ async function loadLeadsW(){try{L=await (await fetch('/api/leads')).json()}catch
   if(view==='inbox')renderInbox();if(view==='pipe')renderBoard()}
 const stageName=(pipe,k)=>((L?.stages?.[pipe]||[]).find(s=>s[0]===k)||[,k])[1];
 $('iq').oninput=()=>renderInbox();
+const initials=n=>(n||'?').replace(/[^A-Za-z0-9 &]/g,'').split(/\s+/).filter(w=>!/^(inc|llc|co|corp|the|of|and|&)$/i.test(w)).slice(0,2).map(w=>w[0]).join('').toUpperCase()||'?';
+function leadRow(x,click){const r=el('div','irow'+(cur===x.id?' on':'')+(x.unread||x.needsYou?' unread':''));
+  const av=el('div','av '+x.brand,initials(x.name));if(x.unread||x.needsYou)av.append(el('span','u'));
+  const m=el('div','m');const top=el('div','top');top.append(el('span','nm',x.name),el('span','tm',ago(x.lastAt)));
+  const pv=el('div','pv');
+  if(x.paid)pv.append(el('span','tag paid','PAID '+money(x.paid.amount)),document.createTextNode(' '));
+  else if(x.needsYou)pv.append(el('span','tag hot','NEEDS YOU'),document.createTextNode(' '));
+  pv.append(document.createTextNode(x.last?'“'+x.last+'”':stageName(x.pipe,x.stage)+(x.brand==='zw'?" · Zander's":'')));
+  m.append(top,pv);r.append(av,m);r.onclick=click;return r}
 function renderInbox(){const q=$('iq').value.toLowerCase(),box=$('ilist');box.replaceChildren();
   const rows=L.leads.filter(x=>!q||(x.name+' '+x.town+' '+x.trade).toLowerCase().includes(q));
-  if(!rows.length)box.append(el('div','small mut','No conversations yet. Leads show up here once Autopilot has texted them.'));
-  rows.forEach(x=>{const r=el('div','irow'+(cur===x.id?' on':''));const n=el('div','n');n.append(el('span',null,x.name),el('span','chip '+x.brand,x.brand==='zw'?"Zander's":'RGS'));
-    if(x.paid)n.append(el('span','chip paid','PAID'));if(x.unread||x.needsYou)n.append(el('span','dot','!'));const t=el('span','small mut',ago(x.lastAt));t.style.marginLeft='auto';n.append(t);
-    r.append(n,el('div','s',stageName(x.pipe,x.stage)+(x.last?' · “'+x.last+'”':'')));r.onclick=()=>openThread(x.id);box.append(r)})}
-async function openThread(id){cur=id;if(view!=='inbox')show('inbox');const th=$('ithread');th.replaceChildren(el('div','mut','Loading conversation…'));
-  let T;try{const r=await fetch('/api/thread/'+encodeURIComponent(id));T=await r.json();if(!r.ok)throw new Error(T.error)}catch(e){th.replaceChildren(el('div','bad',e.message));return}
-  const x=T.lead;th.replaceChildren();document.body.classList.add('mthread');
-  const bk=el('button','back','← Back');bk.onclick=()=>{document.body.classList.remove('mthread');cur=null;renderInbox()};th.append(bk);
-  const hd=el('div','row');hd.append(el('b',null,x.name),el('span','chip '+x.brand,x.brand==='zw'?"Zander's":'RGS'));if(x.paid)hd.append(el('span','chip paid','PAID '+money(x.paid.amount)));
-  const sp=el('span');sp.style.flex='1';hd.append(sp);
-  const sel=el('select');(L.stages[x.pipe]||[]).forEach(([k,n])=>{const o=el('option',null,n);o.value=k;if(k===x.stage)o.selected=true;sel.append(o)});
-  sel.onchange=async()=>{try{await post('/api/lead/stage',{id:x.id,stage:sel.value});toast('Moved to '+sel.selectedOptions[0].textContent);loadLeadsW()}catch(e){toast(e.message)}};hd.append(sel);
-  const sub=el('div','small mut',[x.trade,x.town,x.phone?x.phone.replace(/(\d{3})(\d{3})(\d{4})/,'($1) $2-$3'):''].filter(Boolean).join(' · '));
-  const links=el('div','row small');const site=x.brand==='zw'&&x.zwUrl?x.zwUrl:x.url;if(site){const a=el('a',null,'Their sample site');a.href=site;a.target='_blank';a.rel='noopener';links.append(a)}
-  if(T.lead.contactId){const c=el('a','btn','📞 Call from '+(x.brand==='zw'?"Zander's":'RGS')+' number');c.href='https://app.gohighlevel.com/v2/location/'+(A?.locationId||'')+'/contacts/detail/'+T.lead.contactId;c.target='_blank';c.rel='noopener';c.style.padding='6px 10px';links.append(c)}
-  if(T.lead.contactId){const g=el('a',null,'Open in GHL');g.href='https://app.gohighlevel.com/v2/location/'+(A?.locationId||'')+'/contacts/detail/'+T.lead.contactId;g.target='_blank';g.rel='noopener';links.append(g)}
-  if(x.why)links.append(el('span','mut','First text used: '+x.why));
-  const ms=el('div','msgs');T.messages.forEach(m=>{const b=el('div','msg '+(m.out?'out':'in'),m.text);b.append(el('div','t',fmtT(m.at)));ms.append(b)});
-  if(!T.messages.length)ms.append(el('div','small mut','No messages yet.'));
-  const ta=el('textarea');ta.placeholder='Text '+x.name+' from the '+(x.brand==='zw'?"Zander's":'RGS')+' number…';
-  const send=el('button','p','Send');send.onclick=async()=>{if(!ta.value.trim())return;send.disabled=true;try{await post('/api/lead/reply',{id:x.id,text:ta.value});ta.value='';toast('Sent');openThread(x.id);loadLeadsW()}catch(e){toast(e.message)}send.disabled=false};
-  const pay=el('div','row small');pay.style.marginTop='6px';
-  if(!T.stripe)pay.append(el('span','warn','Payment links: add '+(x.brand==='zw'?'STRIPE_KEY_ZW':'STRIPE_KEY_RGS')+' in Railway to turn these on.'));
+  if(!rows.length)box.append(el('div','empty',q?'No matches.':'No conversations yet. Leads show up here once Autopilot texts them.'));
+  rows.forEach(x=>box.append(leadRow(x,()=>openThread(x.id))))}
+async function openThread(id){cur=id;if(view!=='inbox')show('inbox');const th=$('ithread');th.replaceChildren(el('div','empty','Loading…'));document.body.classList.add('mthread');
+  let T;try{const r=await fetch('/api/thread/'+encodeURIComponent(id));T=await r.json();if(!r.ok)throw new Error(T.error)}catch(e){th.replaceChildren(el('div','empty',e.message));return}
+  const x=T.lead,brandName=x.brand==='zw'?"Zander's":'RGS',ghl='https://app.gohighlevel.com/v2/location/'+(A?.locationId||'')+'/contacts/detail/'+x.contactId;th.replaceChildren();
+  const hd=el('div','thead');const bk=el('button','back','‹');bk.onclick=()=>{document.body.classList.remove('mthread');cur=null;renderInbox()};
+  const who=el('div','who');who.append(el('b',null,x.name),el('span',null,[brandName,x.trade,x.town].filter(Boolean).join(' · ')));
+  hd.append(bk,el('div','av '+x.brand,initials(x.name)),who);
+  const bar=el('div','tbar');
+  if(x.contactId){const c=el('a','pillbtn call','📞 Call');c.href=ghl;c.target='_blank';c.rel='noopener';bar.append(c)}
+  const sel=el('select','pillbtn');(L.stages[x.pipe]||[]).forEach(([k,n])=>{const o=el('option',null,n);o.value=k;if(k===x.stage)o.selected=true;sel.append(o)});
+  sel.onchange=async()=>{try{await post('/api/lead/stage',{id:x.id,stage:sel.value});toast('Moved to '+sel.selectedOptions[0].textContent);loadLeadsW()}catch(e){toast(e.message)}};bar.append(sel);
+  const site=x.brand==='zw'&&x.zwUrl?x.zwUrl:x.url;if(site){const a=el('a','pillbtn','🌐 Their site');a.href=site;a.target='_blank';a.rel='noopener';bar.append(a)}
+  if(x.contactId){const g=el('a','pillbtn','GHL ↗');g.href=ghl;g.target='_blank';g.rel='noopener';bar.append(g)}
+  if(x.paid)bar.append(el('span','pillbtn','✅ Paid '+money(x.paid.amount)));
+  const ms=el('div','msgs');if(x.why)ms.append(el('div','why','First text used: '+x.why));
+  T.messages.forEach(m=>{const b=el('div','msg '+(m.out?'out':'in'),m.text);b.append(el('div','t',fmtT(m.at)));ms.append(b)});
+  if(!T.messages.length)ms.append(el('div','empty','No messages yet.'));
+  const comp=el('div','compose');const sheet=el('div','paysheet');
+  if(!T.stripe)sheet.append(el('div','mut','Payment links need '+(x.brand==='zw'?'STRIPE_KEY_ZW':'STRIPE_KEY_RGS')+' in Railway.'));
   else Object.entries(T.plans).forEach(([k,p])=>{const b=el('button',null,'💳 '+p.label);b.onclick=async()=>{b.disabled=true;try{const r=await post('/api/lead/paylink',{id:x.id,plan:k});
-    ta.value=(ta.value?ta.value.trim()+' ':'')+(x.brand==='zw'?"Here's the link to sign up! "+r.url+" Thank you so much!!":"Here's the link to get you set up: "+r.url);ta.focus();toast('Link created. Review the text, then hit Send.')}catch(e){toast(e.message)}b.disabled=false};pay.append(b)});
-  (x.payLinks||[]).forEach(p=>pay.append(el('span','mut','Link sent '+fmtT(p.at)+' ('+(L.plans[p.brand]?.[p.plan]?.label||p.plan)+')')));
-  const comp=el('div');comp.style.marginTop='8px';const row=el('div','row');row.style.marginTop='6px';row.append(send);comp.append(ta,row,pay);
-  th.append(hd,sub,links,ms,comp);ms.scrollTop=ms.scrollHeight;renderInbox()}
-$('pRgs').onclick=()=>{pipeBrand='rgs';renderBoard()};$('pZw').onclick=()=>{pipeBrand='zw';renderBoard()};
-function renderBoard(){$('pRgs').className=pipeBrand==='rgs'?'p':'';$('pZw').className=pipeBrand==='zw'?'p':'';const b=$('board');b.replaceChildren();
-  (L.stages[pipeBrand]||[]).forEach(([k,n])=>{const items=L.leads.filter(x=>x.pipe===pipeBrand&&x.stage===k);const c=el('div','col');const h=el('h3');h.append(el('span',null,n),el('span',null,String(items.length)));c.append(h);
-    items.forEach(x=>{const d=el('div','pcard');const t=el('div');t.append(el('b',null,x.name));if(x.unread||x.needsYou)t.append(el('span','dot','!'));if(x.paid)t.append(el('span','chip paid',money(x.paid.amount)));
-      d.append(t,el('div','mut',[x.trade,x.town].filter(Boolean).join(' · ')));if(x.last)d.append(el('div',null,'“'+x.last.slice(0,90)+'”'));d.onclick=()=>openThread(x.id);c.append(d)});
-    if(!items.length)c.append(el('div','small mut','—'));b.append(c)})}
+    ta.value=(ta.value?ta.value.trim()+' ':'')+(x.brand==='zw'?"Here's the link to sign up! "+r.url+" Thank you so much!!":"Here's the link to get you set up: "+r.url);sheet.classList.remove('open');ta.focus();grow();toast('Link added. Review it, then send.')}catch(e){toast(e.message)}b.disabled=false};sheet.append(b)});
+  (x.payLinks||[]).forEach(p=>sheet.append(el('div','mut','Link sent '+fmtT(p.at)+' · '+(L.plans[p.brand]?.[p.plan]?.label||p.plan))));
+  const ta=el('textarea');ta.rows=1;ta.placeholder='Text from the '+brandName+' number';const grow=()=>{ta.style.height='auto';ta.style.height=Math.min(140,ta.scrollHeight)+'px'};ta.oninput=grow;
+  const pb=el('button','payb','💳');pb.title='Payment link';pb.onclick=()=>sheet.classList.toggle('open');
+  const send=el('button','sendb','↑');send.onclick=async()=>{if(!ta.value.trim())return;send.disabled=true;try{await post('/api/lead/reply',{id:x.id,text:ta.value});ta.value='';grow();toast('Sent');openThread(x.id);loadLeadsW()}catch(e){toast(e.message)}send.disabled=false};
+  const brow=el('div','bar');brow.append(pb,ta,send);comp.append(sheet,brow);
+  th.append(hd,bar,ms,comp);ms.scrollTop=ms.scrollHeight;renderInbox()}
+let pipeStage=null;
+$('pRgs').onclick=()=>{pipeBrand='rgs';pipeStage=null;renderBoard()};$('pZw').onclick=()=>{pipeBrand='zw';pipeStage=null;renderBoard()};
+function renderBoard(){$('pRgs').className=pipeBrand==='rgs'?'on':'';$('pZw').className=pipeBrand==='zw'?'on':'';
+  const st=L.stages[pipeBrand]||[],inPipe=L.leads.filter(x=>x.pipe===pipeBrand);
+  if(!pipeStage||!st.some(([k])=>k===pipeStage))pipeStage=(st.find(([k])=>inPipe.some(x=>x.stage===k))||st[0]||[])[0];
+  const ch=$('stagechips');ch.replaceChildren();st.forEach(([k,n])=>{const c=inPipe.filter(x=>x.stage===k).length;const b=el('button',k===pipeStage?'on':'',n);b.append(el('i',null,String(c)));b.onclick=()=>{pipeStage=k;renderBoard()};ch.append(b)});
+  const box=$('board');box.replaceChildren();const items=inPipe.filter(x=>x.stage===pipeStage);
+  if(!items.length)box.append(el('div','empty','Nobody in this stage.'));items.forEach(x=>box.append(leadRow(x,()=>openThread(x.id))))}
 const pct=(a,b)=>b?Math.round(100*a/b)+'%':'–';
 async function loadMetrics(){let M;try{M=await (await fetch('/api/metrics')).json()}catch{return}
   const box=$('metrics');box.replaceChildren();
