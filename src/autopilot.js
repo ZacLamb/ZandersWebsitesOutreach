@@ -328,8 +328,12 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
     const X = LRN(); X.corrections.unshift({ at: now().toISOString(), kind, id: L.id, name: L.name, brand: brandOf(L), ...data });
     X.corrections.length = Math.min(X.corrections.length, 300);
   }
-  const lessonsFor = (...areas) => LRN().lessons.filter((x) => areas.includes(x.area)).map((x) => `- ${x.text}`).join('\n');
-  const examples = (n = 6) => LRN().corrections.filter((c) => c.kind === 'takeover' && c.theySaid && c.zac).slice(0, n)
+  // Studied lessons only steer the bot once there is enough data to trust; lessons Zac types in apply right away.
+  const LEARN_MIN = { texts: 75, replies: 10 };
+  const learnData = () => { const ls = Object.values(load().leads).filter((L) => !L.test && L.firstSentAt); return { texts: ls.length, replies: ls.filter((L) => L.replies.some((r) => !r.bot && !r.me)).length }; };
+  const studyLive = () => { const d = learnData(); return d.texts >= LEARN_MIN.texts && d.replies >= LEARN_MIN.replies; };
+  const lessonsFor = (...areas) => LRN().lessons.filter((x) => areas.includes(x.area) && (x.source === 'zac' || studyLive())).map((x) => `- ${x.text}`).join('\n');
+  const examples = (n = 6) => !studyLive() ? '' : LRN().corrections.filter((c) => c.kind === 'takeover' && c.theySaid && c.zac).slice(0, n)
     .map((c) => `They said: "${c.theySaid.slice(0, 140)}" -> Zac replied: "${c.zac.slice(0, 200)}"`).join('\n');
   const learnBlock = (areas, withExamples) => {
     const l = lessonsFor(...areas), e = withExamples ? examples() : '';
@@ -383,7 +387,7 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
   }
   function learnView() {
     const X = LRN();
-    return { summary: X.summary, lessons: X.lessons, lastRun: X.lastRun, runs: X.runs, studied: X.studied,
+    return { live: studyLive(), data: learnData(), min: LEARN_MIN, summary: X.summary, lessons: X.lessons, lastRun: X.lastRun, runs: X.runs, studied: X.studied,
       takeovers: X.corrections.filter((c) => c.kind === 'takeover').length, stageFixes: X.corrections.filter((c) => c.kind === 'stage').length,
       recent: X.corrections.slice(0, 8).map(({ at, kind, name, theySaid, zac, from, to }) => ({ at, kind, name, theySaid, zac, from, to })) };
   }

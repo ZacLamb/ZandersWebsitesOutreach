@@ -385,8 +385,12 @@ test('learning: takeovers and stage fixes are recorded, lessons feed the bot pro
   assert.match(prompts.at(-1), /coach an SMS sales bot/);
   ap.teach('When they say they use Facebook, ask if they want a real site to send people to');
   assert.equal(ap.learnView().lessons.length, 2);
-  // lessons + Zac's example reach the reply bot
-  S.leads.a.manual = false;
+  // too little data: studied lessons and examples stay out of the bot, Zac's taught lesson goes in
+  S.leads.a.manual = false; S.leads.a.firstSentAt = 1;
+  await ap.handleInbound({ contactId: 'c1', text: 'is hosting included?' });
+  assert.doesNotMatch(prompts.at(-1), /give the monthly first/); assert.match(prompts.at(-1), /use Facebook/);
+  for (let i = 0; i < 80; i++) S.leads['f' + i] = { id: 'f' + i, name: 'F' + i, replies: i < 12 ? [{ text: 'yes' }] : [], firstSentAt: 1 };
+  assert.equal(ap.learnView().live, true);
   await ap.handleInbound({ contactId: 'c1', text: 'does it come with hosting?' });
   const sys = prompts.at(-1);
   assert.match(sys, /LEARNED FROM ZAC/); assert.match(sys, /give the monthly first/); assert.match(sys, /Zac replied: "497 to build/);
