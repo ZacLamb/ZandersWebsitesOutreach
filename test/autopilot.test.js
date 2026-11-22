@@ -47,6 +47,9 @@ function mockFetch(log) {
     log.push({ url, method: init.method, body });
     if (url.includes('anthropic')) {
       if (body.system.includes('sample websites')) return J({ content: [{ type: 'text', text: '<!doctype html><html><body><h1>[[NAME]]</h1><p>[[TOWN]] [[PHONE]]</p><a href="tel:[[PHONE_DIGITS]]">Call</a></body></html>' }] });
+      if (body.system.includes('NEXT text in a cold conversation')) { const last = (body.messages[0].content.match(/Their latest reply: (.*)$/) || [])[1] || '';
+        const link = (/send|^yes|^sure|^no$/i.test(last) && !/who/i.test(last)) || /already offered to send it and they replied/.test(body.system);
+        return J({ content: [{ type: 'text', text: JSON.stringify(link ? { action: 'link', text: "No worries! I'm Zac, I build websites for trades around here. I put together a sample site for Joe's Roofing so you can see it: {LINK} What do you think?" } : { action: 'offer', text: "This is Zac! I build websites for trades around here and already put together a sample site for Joe's Roofing. Want me to send it over?" }) }] }); }
       if (body.system.includes('ONE first cold text')) return J({ content: [{ type: 'text', text: JSON.stringify({ text: "Hey Mike! Came across Joe's Roofing on Google, do you guys have a website? -Zac", why: 'clean-up praise, no website' }) }] });
       if (body.system.includes('Zander, a 7 year old')) return J({ content: [{ type: 'text', text: "Hi! I'm Zander and I'm 7. People say you clean up really good! I made Joe's Roofing a free website. It's $20 a month and no setup fee. Can I send it to you?" }] });
       if (/Their reply: sure/.test(body.messages[0].content)) return J({ content: [{ type: 'text', text: '{"intent":"interested","reply":""}' }] });
@@ -61,11 +64,11 @@ function mockFetch(log) {
   };
 }
 
-function setup(over = {}) {
+function setup(over = {}, fx) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap-')); const log = []; const marks = {};
   let queue = [{ place_id: 'ChIJ1', name: "Joe's Roofing", phone: '(508) 555-0101', trade: 'pest control', town: 'Mashpee, MA', tier: 'A', web_type: 'none', reviews: '12', rating: '4.8' }];
   const env = { ANTHROPIC_API_KEY: 'k', GOOGLE_PLACES_KEY: 'g', GHL_TOKEN: 't', GHL_LOCATION_ID: 'L', GHL_PIPELINE_ID: 'P', GHL_STAGE_NEW_LEAD: 'S0', GHL_STAGE_TEXTED: 'S1', GHL_STAGE_RESPOND_YES: 'S2', GHL_STAGE_NOT_INTERESTED: 'S3', GHL_FROM_NUMBER_RGS: '+15085550001', GHL_FROM_NUMBER_ZW: '+15085550002', PUBLIC_URL: 'https://x.up.railway.app', ...over };
-  const ap = createAutopilot({ env, dir, fetchImpl: mockFetch(log), now: () => SAT_3PM_ET, log: () => {}, deps: { nextProspect: () => queue.shift() || null, readyCount: () => 0, markState: (id, v) => (marks[id] = v), jobRunning: () => false, startFind: () => false } });
+  const ap = createAutopilot({ env, dir, fetchImpl: fx || mockFetch(log), now: () => SAT_3PM_ET, log: () => {}, deps: { nextProspect: () => queue.shift() || null, readyCount: () => 0, markState: (id, v) => (marks[id] = v), jobRunning: () => false, startFind: () => false } });
   ap._deps = { queue };
   return { ap, log, marks, dir };
 }
@@ -106,11 +109,32 @@ test('STOP reply opts out, tags, never texts again, no AI call', async () => {
   assert.equal(ap.view().counts.opted_out, 1);
 });
 
-test('price question as first reply: sends the link, flags Zac, queues the bot answer after it', async () => {
+test('price question as first reply: introduces Zac and offers the sample (no bare link, no price), flags Zac', async () => {
   const { ap } = setup(); ap.setSettings({ mode: 'auto' }); await ap.tick(); await ap.tick();
   await ap.handleInbound({ contactId: 'c1', text: 'how much is it?' });
   const v = ap.view(); assert.equal(v.needsYou.length, 1);
-  const pend = ap._state().pending; assert.equal(pend.length, 2); assert.match(pend[0].text, /\/s\//); assert.ok(pend[1].at > pend[0].at);
+  const pend = ap._state().pending; assert.equal(pend.length, 1); assert.ok(!/https?:/.test(pend[0].text)); assert.match(pend[0].text, /Zac/);
+});
+
+test('"who is this?" gets context, not a link; the link goes out with context after they say yes', async () => {
+  const { ap } = setup(); ap.setSettings({ mode: 'auto' }); await ap.tick(); await ap.tick();
+  const r = await ap.handleInbound({ contactId: 'c1', text: "Yes who's this" });
+  assert.equal(r.offered, true); let p = ap._state().pending; assert.equal(p.length, 1);
+  assert.ok(!/https?:/.test(p[0].text)); assert.match(p[0].text, /This is Zac/); assert.match(p[0].text, /website/);
+  ap._state().pending.forEach((x) => (x.at = 0)); await ap.tick();
+  const r2 = await ap.handleInbound({ contactId: 'c1', text: 'sure' });
+  assert.equal(r2.link, true); p = ap._state().pending; assert.match(p.at(-1).text, /sample site .*https:\/\/x\.up\.railway\.app\/s\//); assert.ok(!/^Figured/.test(p.at(-1).text));
+});
+
+test('the reply writer can never send a bare link or a price: bad output falls back to the safe version', async () => {
+  const bad = [{ action: 'link', text: 'Figured! {LINK}' }, { action: 'link', text: 'Here {LINK}' }, { action: 'offer', text: 'This is Zac, sites are $99/mo, want it?' }];
+  for (const b of bad) {
+    const log = []; const base = mockFetch(log);
+    const fetchImpl = async (u, init = {}) => { if (u.includes('anthropic') && JSON.parse(init.body).system.includes('NEXT text in a cold conversation')) return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: JSON.stringify(b) }] }) }; return base(u, init); };
+    const { ap } = setup({}, fetchImpl); ap.setSettings({ mode: 'auto' }); await ap.tick(); await ap.tick();
+    await ap.handleInbound({ contactId: 'c1', text: 'who is this' });
+    const t = ap._state().pending.at(-1).text; assert.ok(!/^Figured|\$/.test(t)); assert.match(t, /This is Zac/);
+  }
 });
 
 test('unknown contacts (not ours) are ignored', async () => {
@@ -346,7 +370,7 @@ test('a "no" to "do you have a website?" is an opening: the site link goes out, 
   await ap.handleInbound({ contactId: 'c1', text: 'no' });
   const tri = log.filter((l) => l.url.includes('anthropic') && /Their reply: no/.test(l.body.messages?.[0]?.content || '')).at(-1);
   assert.match(tri.body.system, /are NOT rejections/);
-  assert.match(ap._state().pending[0].text, /put one together for .* already: https:\/\/x\.up\.railway\.app\/s\//);
+  assert.match(ap._state().pending[0].text, /Zac.*sample site .*https:\/\/x\.up\.railway\.app\/s\//);
 });
 
 test('owner: AI until you reply or it hits 2 replies; take over / hand back', async () => {

@@ -71,9 +71,11 @@ export function templateMessage(p, url, step) {
 }
 // "Hemerson carpentry finish inc" -> "Hemerson Carpentry Finish" for texts that sound like a person wrote them.
 export const shortName = (n) => String(n || '').replace(/\b(inc|llc|l\.l\.c|corp|co|ltd|incorporated|company)\.?\s*$/i, '').replace(/[,\s]+$/, '').replace(/(^|\s)([a-z])/g, (m) => m.toUpperCase()).trim();
+// Fallbacks only (the AI writes these from the actual conversation). Both say who Zac is and why he is texting.
 export const linkMessage = (p, url, brand) => ascii(brand === 'zw'
   ? `Yay! Here it is: ${url} I made it for ${p.name}. Tell me what you think!`
-  : `Figured! I put one together for ${shortName(p.name)} already: ${url} Let me know what you think! -Zac`);
+  : `This is Zac, I build websites for trades around here. I put together a sample site for ${shortName(p.name)} so you can see what yours could look like: ${url} What do you think?`);
+export const offerMessage = (p) => ascii(`This is Zac! I build websites for trades around here and put together a sample one for ${shortName(p.name)}. Want me to send it over?`);
 const SKIP_LINK = new Set(['not_interested', 'wrong_person', 'asks_if_bot']);
 
 const VOICE = `Zac's texting style: casual, plain words, short sentences, sounds like a local contractor texting another contractor. No marketing language.`;
@@ -191,6 +193,41 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
       day().spend += COST.msg;
       return okText(m, 320) && /7|seven/i.test(m) && /\$?20/.test(m) ? m : base;
     } catch { return base; }
+  }
+
+  // Their first reply came in: answer it like a person, say who Zac is and why he is texting, then either offer the sample or send it.
+  const okBridge = (m, link, introduced) => m && m.length <= 330 && !/^figured/i.test(m) && /\b(site|website)\b/i.test(m) && (introduced || /\bzac\b/i.test(m))
+    && !/\$|\bfree\b|price|cost|contract|per month|\/mo\b/i.test(m) && (link ? (m.match(/\{LINK\}/g) || []).length === 1 && m.replace('{LINK}', '').length >= 70 : !/https?:|\{LINK\}/.test(m));
+  async function writeBridge(L, body) {
+    const introduced = /\bzac\b/i.test([L.msg, ...L.replies.filter((r) => r.bot || r.me).map((r) => r.text)].join(' '));
+    const fallback = L.sampleOffered ? { action: 'link', text: linkMessage(L, L.url, 'rgs') } : { action: 'offer', text: offerMessage(L) };
+    if (!env.ANTHROPIC_API_KEY) return fallback;
+    const convo = [`ZAC: ${L.msg}`, ...L.replies.map((r) => `${r.bot || r.me ? 'ZAC' : 'THEM'}: ${r.text}`)].join('\n');
+    try {
+      const t = await askClaude(env, {
+        model: WRITER(), maxTokens: 2000,
+        system: `${VOICE}
+
+You write Zac's NEXT text in a cold conversation with a local trade business owner. Zac builds websites for local trades and has ALREADY built a sample site for their business (it is real and ready). Context the reader may not have: who Zac is, and why he is texting them.
+
+Write like a real person who just got a reply from someone he texted out of the blue:
+1. First respond to what they actually said. If they asked who this is, tell them ("This is Zac"). If they asked why, tell them. If they answered "no website" acknowledge it ("No worries", "Figured you might not"). If they confirmed it's them, just roll into it naturally.
+2. Unless Zac's earlier texts already said it, say in a few plain words who he is and why he's texting: he builds websites for trades around here and already put together a sample site for them. If the facts show a real reason (no website on Google, Facebook only, old or broken site) you may mention it briefly and honestly. Never invent anything.
+3. Then choose:
+   - "offer": ask if they want to see it, with NO link. Use this when they were guarded or asked who this is, when they only confirmed the number/name, or when they don't yet know why Zac is texting. This is the default.
+   - "link": only when they clearly said yes to seeing it, or answered Zac's website question in a way that shows they are open (e.g. "no we don't have one", "not yet"), or Zac already offered it. Put the placeholder {LINK} exactly once where the link goes, with context BEFORE it (what it is: a sample site he made for them), and end with an easy question like "What do you think?"
+${L.sampleOffered ? 'Zac already offered to send it and they replied; unless they said no, use "link".\n' : ''}Never send a bare link, never start with "Figured!", never sound like a mass text. No price, cost, "free", offers or contracts (if they ask price, say you'll go over it after they see it). 80-300 characters, plain ASCII, no emoji. Optional sign-off "-Zac" only if the name isn't already in the text.
+
+Return ONLY JSON: {"action": "offer" or "link", "text": "..."}`,
+        user: `Business: ${L.name} (${L.trade || 'trade'}, ${L.town || ''})\nWhat we know: ${angleOf(L)}${L.facts?.site?.copyrightYear ? ', site copyright ' + L.facts.site.copyrightYear : ''}\nConversation so far:\n${convo}\nTheir latest reply: ${body}`,
+      }, fetchImpl);
+      const jm = t.match(/\{[\s\S]*\}/); const j = JSON.parse(jm ? jm[0] : '{}');
+      const action = j.action === 'link' || L.sampleOffered ? 'link' : 'offer';
+      const m = ascii(j.text || '');
+      if (okBridge(m, action === 'link', introduced)) return { action, text: m };
+      ev('warn', `reply to ${L.name} failed checks ("${m.slice(0, 70)}..."), using the safe version`, L.id);
+    } catch (e) { ev('warn', `reply writer failed: ${e.message}`, L.id); }
+    return fallback;
   }
 
   // Research + write for a lead object; stores facts so the Zander touch can reuse them.
@@ -422,11 +459,22 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
       save(); return { optout: true };
     }
     const c = await classify(L, body); L.lastIntent = c.intent;
-    if (!L.linkSent && !SKIP_LINK.has(c.intent)) {
-      // They answered the ask-first text: send the sample link. Only a price question also pulls Zac in.
-      L.linkSent = true; L.status = 'link_sent';
-      S.pending.push({ id: L.id, at: now().getTime() + 30e3 + Math.random() * 60e3, text: linkMessage(L, L.url, L.brand) });
+    if (!L.linkSent && !L.manual && !SKIP_LINK.has(c.intent)) {
+      // They answered the first text. RGS: reply to what they said, say who Zac is and why, and offer the sample
+      // (or send it with context once they are clearly open). Never a bare link. Zander's first text already asked "can I send it?".
+      const at = now().getTime() + 30e3 + Math.random() * 60e3;
       L.zwDueAt = null; L.inZwQueue = false; await move(L, 'RESPOND');
+      const b = L.brand === 'zw' ? { action: 'link', text: linkMessage(L, L.url, 'zw') } : await writeBridge(L, body);
+      if (b.action === 'offer') {
+        L.sampleOffered = true; L.status = 'replied';
+        S.pending.push({ id: L.id, at, text: b.text });
+        if (c.intent === 'price' || c.intent === 'objection') { L.needsYou = true; (L.hot ||= {}).rgs = true; await alertZac(`ZW lead: ${L.name} replied "${body.slice(0, 120)}"`); }
+        ev('reply', `${L.name}: "${body.slice(0, 80)}" -> introduced Zac and offered the sample`, L.id);
+        save(); return { intent: c.intent, offered: true };
+      }
+      L.linkSent = true; L.status = 'link_sent';
+      S.pending.push({ id: L.id, at, text: b.text.replace('{LINK}', L.url) });
+      if (L.brand !== 'zw') c.reply = '';
       if (c.intent === 'price' || c.intent === 'objection') {
         L.needsYou = true; (L.hot ||= {})[L.brand === 'zw' ? 'zw' : 'rgs'] = true; await alertZac(`ZW lead: ${L.name} replied "${body.slice(0, 120)}"`);
         if (c.reply) S.pending.push({ id: L.id, at: now().getTime() + 120e3 + Math.random() * 60e3, text: c.reply });
