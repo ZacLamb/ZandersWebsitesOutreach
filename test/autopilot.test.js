@@ -356,3 +356,42 @@ test('owner: AI until you reply or it hits 2 replies; take over / hand back', as
   ap.setOwner('ChIJ1', 'ai'); assert.equal(ap.leadsView()[0].owner, 'ai'); assert.equal(ap._state().leads.ChIJ1.manual, false);
   ap.setOwner('ChIJ1', 'you'); assert.equal(ap.leadsView()[0].owner, 'you');
 });
+
+test('learning: takeovers and stage fixes are recorded, lessons feed the bot prompts, Zac can teach and forget', async () => {
+  const { createAutopilot } = await import('../src/autopilot.js');
+  const fs = await import('node:fs'); const os = await import('node:os'); const path = await import('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zwl-'));
+  const prompts = [];
+  const fetchImpl = async (u, o) => {
+    const b = o?.body ? JSON.parse(o.body) : {};
+    if (String(u).includes('anthropic')) {
+      prompts.push(b.system);
+      const txt = /coach an SMS sales bot/.test(b.system) ? JSON.stringify({ summary: 'Price askers convert when Zac answers fast.', lessons: [{ area: 'replies', text: 'When they ask how much, give the monthly first then ask if they want the link.', evidence: 'Hemerson' }, { area: 'bogus', text: 'x' }] })
+        : JSON.stringify({ intent: 'question', plan: 'monthly', reply: 'Sure thing' });
+      { const j = { content: [{ type: 'text', text: txt }] }; return { ok: true, status: 200, json: async () => j, text: async () => JSON.stringify(j) }; }
+    }
+    { const j = { conversations: [], messageId: 'm1', opportunities: [] }; return { ok: true, status: 200, json: async () => j, text: async () => JSON.stringify(j) }; }
+  };
+  const env = { ANTHROPIC_API_KEY: 'k', GHL_TOKEN: 't', GHL_LOCATION_ID: 'loc', GHL_PIPELINE_ID: 'p', GHL_STAGE_NEW_LEAD: 's', GHL_STAGE_RESPOND: 'r', GHL_STAGE_RESPOND_YES: 'y', GHL_STAGE_TEXTED: 'x' };
+  const ap = createAutopilot({ dir, env, fetchImpl, now: () => new Date('2026-11-23T15:00:00Z') });
+  const S = ap._state();
+  S.leads.a = { id: 'a', name: 'Hemerson Carpentry', contactId: 'c1', phone: '+1', msg: 'Hey do you guys have a website?', url: 'u', replies: [{ at: '2026-11-23T14:00:00Z', text: 'Nice. How much' }], linkSent: true, status: 'hot', botReplies: 0, step: 1, lastSentAt: 1 };
+  S.byContact.c1 = 'a';
+  await ap.reply('a', '497 to build and 99 a month, want the link?');
+  await ap.setStage('a', 'RESPOND_YES');
+  let v = ap.learnView(); assert.equal(v.takeovers, 1); assert.equal(v.stageFixes, 1);
+  await ap.learnNow('test');
+  v = ap.learnView(); assert.equal(v.lessons.length, 1); assert.match(v.summary, /Price askers/);
+  assert.match(prompts.at(-1), /coach an SMS sales bot/);
+  ap.teach('When they say they use Facebook, ask if they want a real site to send people to');
+  assert.equal(ap.learnView().lessons.length, 2);
+  // lessons + Zac's example reach the reply bot
+  S.leads.a.manual = false;
+  await ap.handleInbound({ contactId: 'c1', text: 'does it come with hosting?' });
+  const sys = prompts.at(-1);
+  assert.match(sys, /LEARNED FROM ZAC/); assert.match(sys, /give the monthly first/); assert.match(sys, /Zac replied: "497 to build/);
+  // forgetting a studied lesson stops it coming back
+  const id = ap.learnView().lessons.find((l) => l.source === 'study').id;
+  ap.forget(id); assert.equal(ap.learnView().lessons.length, 1);
+  await ap.learnNow('again'); assert.equal(ap.learnView().lessons.filter((l) => l.source === 'study').length, 0);
+});

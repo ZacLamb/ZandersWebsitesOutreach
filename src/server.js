@@ -184,6 +184,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/autopilot') return send(res, 200, autopilot.view());
     if (req.method === 'GET' && url.pathname === '/api/leads') return send(res, 200, { leads: autopilot.leadsView(), stages: STAGES, plans: PLANS, stripe: { rgs: !!process.env.STRIPE_KEY_RGS, zw: !!process.env.STRIPE_KEY_ZW } });
     if (req.method === 'GET' && url.pathname === '/api/push/key') return send(res, 200, { key: push.publicKey(), devices: push.count() });
+    if (req.method === 'GET' && url.pathname === '/api/learn') return send(res, 200, autopilot.learnView());
     if (req.method === 'GET' && url.pathname === '/api/metrics') return send(res, 200, autopilot.metrics());
     const tmatch = url.pathname.match(/^\/api\/thread\/([\w-]{3,200})$/);
     if (req.method === 'GET' && tmatch) { try { return send(res, 200, await autopilot.thread(tmatch[1])); } catch (e) { return send(res, 404, { error: e.message }); } }
@@ -207,6 +208,15 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/api/push/subscribe') { try { push.subscribe(JSON.parse((await readBody(req, 1e4)) || '{}')); return send(res, 200, { ok: true, devices: push.count() }); } catch (e) { return send(res, 400, { error: e.message }); } }
       if (url.pathname === '/api/push/test') { await push.send({ title: 'ZW Outreach', body: 'Notifications are on. You will get one for every reply.', url: '/' }); return send(res, 200, { ok: true, devices: push.count() }); }
       if (url.pathname === '/api/stripe/check') return send(res, 200, { rgs: await checkStripe(process.env, 'rgs'), zw: await checkStripe(process.env, 'zw') });
+      if (url.pathname.startsWith('/api/learn/')) {
+        const o = JSON.parse((await readBody(req, 1e4)) || '{}');
+        try {
+          if (url.pathname === '/api/learn/run') { await autopilot.learnNow('you asked'); return send(res, 200, autopilot.learnView()); }
+          if (url.pathname === '/api/learn/teach') return send(res, 200, autopilot.teach(o.text));
+          if (url.pathname === '/api/learn/forget') return send(res, 200, autopilot.forget(String(o.id || '')));
+        } catch (e) { return send(res, 400, { error: e.message }); }
+        return send(res, 404, { error: 'not found' });
+      }
       if (url.pathname.startsWith('/api/lead/')) {
         const o = JSON.parse((await readBody(req, 1e5)) || '{}'); const id = String(o.id || '');
         try {

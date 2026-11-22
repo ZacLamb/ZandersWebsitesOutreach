@@ -165,6 +165,12 @@ button,.btn{border-radius:12px;font-weight:600;border-color:var(--line);backgrou
   <div class="small mut" id="window" style="margin-top:8px"></div></div>
 <h2>Today</h2>
 <div class="card"><div class="grid" id="stats"></div></div>
+<h2>What the AI learned</h2>
+<div class="card"><div class="small mut" id="lrnMeta">It studies every conversation each night (2am ET): what you wrote when you took over, stages you fixed, and which texts got replies and sales.</div>
+  <div class="small" id="lrnSum" style="margin:8px 0"></div><div id="lrnList"></div>
+  <div class="row" style="margin-top:10px"><input id="lrnIn" placeholder="Teach it something, e.g. When they ask how much, give the monthly first" style="flex:1;min-width:160px"><button id="lrnAdd">Teach</button></div>
+  <div class="row" style="margin-top:8px"><button class="p" id="lrnRun">Study all conversations now</button></div>
+  <div class="small mut" id="lrnRecent" style="margin-top:10px"></div></div>
 <h2>Limits and offers</h2>
 <div class="card">
   <div class="row"><label class="small">Daily budget $ <input id="sBudget" type="number" step="0.5" min="0" style="width:90px"></label><label class="small">Max texts/day <input id="sCap" type="number" min="0" style="width:90px"></label></div>
@@ -189,6 +195,21 @@ function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';cle
 async function post(p,b){const r=await fetch(p,{method:'POST',headers:H,body:JSON.stringify(b||{})});if(r.status===401){location.href='/login';return}const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('Error '+r.status));return j}
 let S=null,A=null,leads=[],sel=new Set(),wasRunning=false;
 
+
+const AREA={first_text:'First text',replies:'Replies',triage:'Reading replies'};
+function renderLearn(X){if(!X)return;const ago=t=>{if(!t)return'never';const m=Math.round((Date.now()-t)/6e4);return m<60?m+' min ago':m<1440?Math.round(m/60)+' h ago':Math.round(m/1440)+' d ago'};
+  $('lrnMeta').textContent=`Last studied ${ago(X.lastRun)} · ${X.studied||0} conversations · ${X.takeovers} of your takeovers · ${X.stageFixes} stage fixes. Runs every night at 2am ET.`;
+  $('lrnSum').textContent=X.summary||'';const box=$('lrnList');box.textContent='';
+  if(!X.lessons.length)box.append(el('div','small mut','No lessons yet. Tap "Study all conversations now" or teach it one.'));
+  for(const l of X.lessons){const r=el('div','row');r.style.cssText='align-items:flex-start;gap:8px;padding:8px 0;border-top:1px solid var(--ln,#2a2a2a)';
+    const tag=el('span','small',(l.source==='zac'?'👤 ':'🤖 ')+AREA[l.area]);tag.style.cssText='flex:0 0 auto;opacity:.7;min-width:92px';
+    const t=el('div','small',l.text);t.style.flex='1';if(l.evidence){t.title=l.evidence;t.append(el('div','small mut',l.evidence))}
+    const x=el('button','',  '✕');x.style.cssText='flex:0 0 auto;padding:2px 9px';x.title='Forget this lesson';x.onclick=async()=>{try{renderLearn(await post('/api/learn/forget',{id:l.id}));toast('Forgotten. It will not suggest that again.')}catch(e){toast(e.message)}};
+    r.append(tag,t,x);box.append(r)}
+  $('lrnRecent').textContent=X.recent.length?'Latest of your changes it will learn from: '+X.recent.slice(0,4).map(c=>c.kind==='takeover'?`${c.name} (you replied "${(c.zac||'').slice(0,40)}")`:c.kind==='stage'?`${c.name} (moved to ${c.to})`:`${c.name} (${c.kind.replace('_',' ')})`).join(' · '):''}
+async function loadLearn(){try{const r=await fetch('/api/learn');if(r.ok)renderLearn(await r.json())}catch{}}
+$('lrnAdd').onclick=async()=>{const v=$('lrnIn').value.trim();if(!v)return;try{renderLearn(await post('/api/learn/teach',{text:v}));$('lrnIn').value='';toast('Got it. The bot uses this from the next text.')}catch(e){toast(e.message)}};
+$('lrnRun').onclick=async()=>{const b=$('lrnRun');b.disabled=true;b.textContent='Studying… (about a minute)';try{renderLearn(await post('/api/learn/run'));toast('Done. New lessons are live.')}catch(e){toast(e.message)}b.disabled=false;b.textContent='Study all conversations now'};
 $('pick').onclick=()=>$('file').click();
 $('file').onchange=async()=>{const f=$('file').files[0];if(!f)return;const r=await fetch('/api/clients',{method:'POST',headers:{'X-ZW':'1'},body:await f.text()});const j=await r.json();toast(r.ok?'Loaded '+j.rows+' clients':j.error);refresh()};
 document.querySelectorAll('[data-n]').forEach(b=>b.onclick=async()=>{try{await post('/api/find',{maxQueries:+b.dataset.n});toast('Searching… leads will appear in a few minutes.')}catch(e){toast(e.message)}refresh()});
@@ -256,7 +277,7 @@ const fmtT=s=>{const d=new Date(s);return isNaN(d)?'':d.toLocaleString(undefined
 document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick=()=>show(b.dataset.v));
 function show(v){view=v;document.body.classList.remove('mthread');document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   for(const x of ['inbox','pipe','metrics','leads','settings'])$('v-'+x).style.display=x===v?'block':'none';
-  $('main').classList.toggle('wide',v==='inbox'||v==='pipe'||v==='metrics');if(v==='metrics')loadMetrics();else if(v==='inbox'||v==='pipe')loadLeadsW()}
+  $('main').classList.toggle('wide',v==='inbox'||v==='pipe'||v==='metrics');if(v==='metrics')loadMetrics();else if(v==='settings')loadLearn();else if(v==='inbox'||v==='pipe')loadLeadsW()}
 async function loadLeadsW(){try{L=await (await fetch('/api/leads')).json()}catch{return}
   const u=L.leads.filter(x=>x.unread||x.needsYou).length;$('unreadDot').style.display=u?'inline-block':'none';$('unreadDot').textContent=u;
   if(view==='inbox')renderInbox();if(view==='pipe')renderBoard()}

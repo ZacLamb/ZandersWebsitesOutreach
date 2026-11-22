@@ -164,7 +164,7 @@ Make it sound like a real person texting from his phone, and vary it: do NOT alw
 
 Hard rules: 35-150 characters total. No price, cost, money, "free", offers, contracts or guarantees. No link or URL. Do not explain what Zac does or sell anything. Do not compliment their reviews or describe their business back to them. Plain ASCII, no emoji. Never invent facts.
 
-Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 words max"}`,
+Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 words max"}${learnBlock(['first_text'], false)}`,
         user: brief(p, facts), maxTokens: 2500,
       }, fetchImpl);
       // Prefer the JSON shape; if the model answered with just the text, use that.
@@ -307,7 +307,7 @@ Return ONLY JSON: {"text": "...", "why": "the specific detail(s) you used, 10 wo
     try {
       const out = await askClaude(env, {
         system: `IMPORTANT: our first text asked them a simple question, like "do you guys have a website?", "is this the right number for X?", "who handles your website?" or "where do you send people to see your work?". Plain answers to that question such as "yes", "no", "nope", "not yet", "we don't", "me", "who's asking?", "Facebook", "why?" or "yes I do" are NOT rejections: classify them as "interested" (an opening, the sample link goes out next). Only clear rejections ("not interested", "all set", "don't need one", "leave me alone") are "not_interested".
-You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websites (Zander, age 7, with his dad Zac helping)" : 'Zac from Revenue Generating Solutions'}, who offered a local trade business a free sample website. Return ONLY JSON: {"intent": one of "ready_to_buy","interested","price","question","objection","not_interested","wrong_person","asks_if_bot","other","plan": one of "monthly","annual","monthly_seo","reply": string}. Use "ready_to_buy" ONLY when they clearly say they want to go ahead and pay or sign up (e.g. "let's do it", "how do I sign up", "send me the link to pay", "I'll take it"); a yes to seeing the sample, a maybe, or a question is NOT ready_to_buy. "plan": "annual" only if they chose paying the year up front, "monthly_seo" only if they asked for the SEO add-on, otherwise "monthly". For ready_to_buy set "reply" to "". "reply" is a short friendly plain-ASCII text from Zac (max 220 chars, no emoji) or "" if no reply should be sent. Rules: never state any price or timeline unless it appears in OFFER below; if price is asked and OFFER is empty, reply that you'll grab the details and text right back; never promise anything not in OFFER; if they ask whether this is a bot/automated/AI, intent "asks_if_bot" and reply ""; if not_interested/wrong_person, reply "" ; keep the sender's casual local voice; never mention the other brand.\nOFFER: ${(L.brand === 'zw' ? S.settings.offerZw : [S.settings.offer, VARIANTS[L.variant]?.offer].filter(Boolean).join(' ')) || '(none)'}`,
+You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websites (Zander, age 7, with his dad Zac helping)" : 'Zac from Revenue Generating Solutions'}, who offered a local trade business a free sample website. Return ONLY JSON: {"intent": one of "ready_to_buy","interested","price","question","objection","not_interested","wrong_person","asks_if_bot","other","plan": one of "monthly","annual","monthly_seo","reply": string}. Use "ready_to_buy" ONLY when they clearly say they want to go ahead and pay or sign up (e.g. "let's do it", "how do I sign up", "send me the link to pay", "I'll take it"); a yes to seeing the sample, a maybe, or a question is NOT ready_to_buy. "plan": "annual" only if they chose paying the year up front, "monthly_seo" only if they asked for the SEO add-on, otherwise "monthly". For ready_to_buy set "reply" to "". "reply" is a short friendly plain-ASCII text from Zac (max 220 chars, no emoji) or "" if no reply should be sent. Rules: never state any price or timeline unless it appears in OFFER below; if price is asked and OFFER is empty, reply that you'll grab the details and text right back; never promise anything not in OFFER; if they ask whether this is a bot/automated/AI, intent "asks_if_bot" and reply ""; if not_interested/wrong_person, reply "" ; keep the sender's casual local voice; never mention the other brand.\nOFFER: ${(L.brand === 'zw' ? S.settings.offerZw : [S.settings.offer, VARIANTS[L.variant]?.offer].filter(Boolean).join(' ')) || '(none)'}${learnBlock(['replies', 'triage'], true)}`,
         user: `Business: ${L.name}\nOur text: ${L.msg}\n${L.linkSent ? 'We already sent them the sample link.' : 'We have not sent the link yet; a separate message with the link is sent automatically, so your reply must NOT include a link.'}\nTheir reply: ${text}`, maxTokens: 1000,
       }, fetchImpl);
       day().spend += COST.triage;
@@ -320,6 +320,83 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
     if (/^PAID/.test(text)) { try { await deps.notify?.({ title: '💰 New client', body: text.slice(0, 180), url: '/' }); } catch {} }
     if (!env.ALERT_CONTACT_ID) return;
     try { await sendSms(env, env.ALERT_CONTACT_ID, ascii(text).slice(0, 300), fetchImpl); } catch (e) { ev('warn', `alert failed: ${e.message}`); }
+  }
+
+  // ---------- Learning: Zac's takeovers + stage changes + what got replies/sales become lessons ----------
+  const LRN = () => (load().learn ||= { lessons: [], corrections: [], removed: [], lastRun: 0, lastRunDate: '', runs: 0, summary: '', studied: 0 });
+  function record(kind, L, data) {
+    const X = LRN(); X.corrections.unshift({ at: now().toISOString(), kind, id: L.id, name: L.name, brand: brandOf(L), ...data });
+    X.corrections.length = Math.min(X.corrections.length, 300);
+  }
+  const lessonsFor = (...areas) => LRN().lessons.filter((x) => areas.includes(x.area)).map((x) => `- ${x.text}`).join('\n');
+  const examples = (n = 6) => LRN().corrections.filter((c) => c.kind === 'takeover' && c.theySaid && c.zac).slice(0, n)
+    .map((c) => `They said: "${c.theySaid.slice(0, 140)}" -> Zac replied: "${c.zac.slice(0, 200)}"`).join('\n');
+  const learnBlock = (areas, withExamples) => {
+    const l = lessonsFor(...areas), e = withExamples ? examples() : '';
+    if (!l && !e) return '';
+    return `\n\nLEARNED FROM ZAC'S REAL CONVERSATIONS (follow these, but they never override the hard rules above${withExamples ? ', and never copy a price or promise from an example unless it is in OFFER' : ''}):\n${l}${e ? `\nHow Zac himself answered when he stepped in (match this voice):\n${e}` : ''}`;
+  };
+  async function transcript(L) {
+    let msgs = null;
+    if (L.contactId && env.GHL_TOKEN) { try { msgs = await getThread(env, L.contactId, fetchImpl); } catch { msgs = null; } }
+    const mine = new Set(L.replies.filter((r) => r.me).map((r) => r.text.trim()));
+    const bot = new Set([L.msg, L.zwMsg, ...L.replies.filter((r) => r.bot).map((r) => r.text), linkMessage(L, L.url, L.brand), templateMessage(L, L.url, 1), templateMessage(L, L.url, 2)].filter(Boolean).map((t) => String(t).trim()));
+    if (!msgs) { msgs = []; if (L.msg) msgs.push({ text: L.msg, out: true }); for (const r of L.replies) msgs.push({ text: r.text, out: !!(r.bot || r.me) }); }
+    return msgs.map((m) => `${!m.out ? 'THEM' : mine.has(m.text.trim()) ? 'ZAC' : bot.has(m.text.trim()) || /^(Figured!|Awesome! Here's the link|Yay!!)/.test(m.text) ? 'BOT' : 'ZAC'}: ${m.text.replace(/\s+/g, ' ').slice(0, 300)}`).join('\n');
+  }
+  async function learnNow(why = 'scheduled') {
+    const X = LRN();
+    const cases = Object.values(S.leads).filter((L) => !L.test && L.contactId && (L.replies.length || L.manual || L.paid))
+      .sort((a, b) => lastAt(b) - lastAt(a)).slice(0, 40);
+    if (!cases.length && !X.corrections.length) { X.lastRun = now().getTime(); X.lastRunDate = etParts(now()).date; save(); return { ok: true, lessons: X.lessons.length, note: 'No conversations yet to learn from.' }; }
+    const blocks = [];
+    for (const L of cases) {
+      const st = derivedStage(L) || {};
+      blocks.push(`### ${L.name} (${L.trade || 'trade'}, ${L.town || ''}) brand=${brandOf(L)} opener=${OPENERS[L.opener]?.label || '-'} outcome=${L.paid ? 'PAID ' + L.paid.plan : L.status}/${st.stage || ''} lastIntent=${L.lastIntent || '-'}${L.manual ? ' ZAC_TOOK_OVER' : ''}\n${await transcript(L)}`);
+    }
+    const m = metrics();
+    const opens = Object.entries(m.byOpener || {}).map(([k, v]) => `${k}: ${v.texted} texted, ${v.replied} replied, ${v.interested} interested, ${v.won} won`).join('\n');
+    const corr = X.corrections.slice(0, 60).map((c) => c.kind === 'takeover' ? `TAKEOVER ${c.name}: they said "${(c.theySaid || '').slice(0, 120)}"${c.botSaid ? `, bot had said "${c.botSaid.slice(0, 120)}"` : ''}, Zac wrote "${(c.zac || '').slice(0, 200)}"`
+      : c.kind === 'stage' ? `STAGE ${c.name}: Zac moved ${c.from || '?'} -> ${c.to} (bot had classified "${c.intent || '-'}")` : `${c.kind.toUpperCase()} ${c.name}${c.note ? ': ' + c.note : ''}`).join('\n');
+    const out = await askClaude(env, {
+      model: WRITER(), maxTokens: 4000,
+      system: `You coach an SMS sales bot that sells websites to local New England trade businesses for Zac (brand RGS: build + monthly care; brand Zander's Websites: $20/mo run by his 7-year-old son). Zac is the expert closer. Study the real conversations, Zac's own takeovers (lines marked ZAC are him; BOT is the bot) and his manual stage corrections, plus which openers got replies and sales. Write the playbook the bot should follow from now on.
+
+Learn mostly from: what Zac wrote when he stepped in (his wording, order, how he handles price and objections), where the bot misread a reply (Zac moved the stage), what first texts got answers, and what led to payment. Ignore one-off noise. Prefer specific, testable rules over vague advice ("When they ask 'how much', give the monthly number first and ask if they want the link" beats "be helpful").
+
+Hard rules the bot keeps no matter what, so never write a lesson against them: no price, cost, 'free' or offer in an RGS first text; first texts stay under 150 characters with one question and no link; never invent facts or prices that are not in the offer; STOP/opt-outs are always honored; never mention the other brand; never claim to be human if asked if it is a bot. Do not repeat any of these rejected lessons: ${JSON.stringify(X.removed.slice(0, 30))}.
+
+Areas: "first_text" (how to write the opening text), "replies" (how to answer after they reply: wording, handling price/objections/questions, when to send links), "triage" (how to read replies: what counts as interested, a no, ready to buy).
+If there is little data, return fewer lessons; it is fine to return 2. Max 12 lessons, each one sentence under 170 characters, plain ASCII.
+Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what is not, with numbers", "lessons": [{"area": "...", "text": "...", "evidence": "short: which leads/numbers"}]}`,
+      user: `OPENER RESULTS:\n${opens || '(none yet)'}\n\nZAC'S CORRECTIONS (newest first):\n${corr || '(none yet)'}\n\nCURRENT LESSONS:\n${X.lessons.map((x) => `[${x.area}${x.source === 'zac' ? ', taught by Zac' : ''}] ${x.text}`).join('\n') || '(none)'}\n\nCONVERSATIONS (newest first):\n${blocks.join('\n\n') || '(none)'}`,
+    }, fetchImpl);
+    day().spend += 0.25;
+    const jm = out.match(/\{[\s\S]*\}/); const j = JSON.parse(jm ? jm[0] : '{}');
+    const fresh = (Array.isArray(j.lessons) ? j.lessons : []).filter((x) => ['first_text', 'replies', 'triage'].includes(x.area) && x.text)
+      .slice(0, 12).map((x, i) => ({ id: `s${now().getTime().toString(36)}${i}`, area: x.area, text: ascii(x.text).slice(0, 200), evidence: ascii(x.evidence || '').slice(0, 160), source: 'study', at: now().toISOString() }))
+      .filter((x) => !X.removed.includes(x.text));
+    X.lessons = [...X.lessons.filter((x) => x.source === 'zac'), ...fresh];
+    X.summary = ascii(j.summary || '').slice(0, 600); X.lastRun = now().getTime(); X.lastRunDate = etParts(now()).date; X.runs++; X.studied = cases.length;
+    ev('info', `AI studied ${cases.length} conversations and ${X.corrections.length} of your changes (${why}): ${fresh.length} lessons`);
+    save(); return { ok: true, lessons: X.lessons.length };
+  }
+  function learnView() {
+    const X = LRN();
+    return { summary: X.summary, lessons: X.lessons, lastRun: X.lastRun, runs: X.runs, studied: X.studied,
+      takeovers: X.corrections.filter((c) => c.kind === 'takeover').length, stageFixes: X.corrections.filter((c) => c.kind === 'stage').length,
+      recent: X.corrections.slice(0, 8).map(({ at, kind, name, theySaid, zac, from, to }) => ({ at, kind, name, theySaid, zac, from, to })) };
+  }
+  function teach(text) {
+    const t = ascii(String(text || '')).trim().slice(0, 200); if (t.length < 5) throw new Error('write the lesson in a sentence');
+    const area = /first text|opener|opening/i.test(t) ? 'first_text' : /classif|counts as|means they|treat .* as/i.test(t) ? 'triage' : 'replies';
+    LRN().lessons.unshift({ id: `z${now().getTime().toString(36)}`, area, text: t, source: 'zac', at: now().toISOString() });
+    ev('info', `You taught the AI: "${t.slice(0, 80)}"`); save(); return learnView();
+  }
+  function forget(id) {
+    const X = LRN(); const x = X.lessons.find((l) => l.id === id); if (!x) throw new Error('lesson not found');
+    X.lessons = X.lessons.filter((l) => l !== x); if (x.source === 'study') X.removed.unshift(x.text); X.removed.length = Math.min(X.removed.length, 60);
+    save(); return learnView();
   }
 
   // Called by the GHL webhook when a prospect replies.
@@ -414,6 +491,7 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
     try {
       load();
       await pollPayments();
+      { const X = LRN(), e = etParts(now()); if (env.ANTHROPIC_API_KEY && e.hour >= 2 && e.hour < 6 && X.lastRunDate !== e.date) { try { await learnNow('nightly'); } catch (err) { X.lastRunDate = e.date; ev('warn', `learning run failed: ${err.message}`); } } }
       if (S.settings.mode === 'off' || S.paused) { if (S.pending.some((p) => S.leads[p.id]?.test)) await flushPending(true); return; }
       await flushPending();
       if ((S.msgVersion || 1) < 2) { // offer split test + customer-first copy: rewrite queued drafts
@@ -495,8 +573,8 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
   const ownerOf = (L) => (['opted_out', 'won', 'closed', 'bad_number', 'duplicate'].includes(L.status) ? 'done' : L.manual || L.botReplies >= S.settings.maxBotReplies ? 'you' : 'ai');
   function setOwner(id, who) {
     load(); const L = S.leads[id]; if (!L) throw new Error('lead not found');
-    if (who === 'you') { L.manual = true; ev('info', `You took over ${L.name}`, L.id); }
-    else if (who === 'ai') { L.manual = false; L.botReplies = 0; L.needsYou = false; ev('info', `Handed ${L.name} back to the AI`, L.id); }
+    if (who === 'you') { L.manual = true; record('takeover_flag', L, { note: `took over after they said "${(L.replies.filter((r) => !r.bot && !r.me).slice(-1)[0]?.text || '').slice(0, 100)}"` }); ev('info', `You took over ${L.name}`, L.id); }
+    else if (who === 'ai') { record('handback', L, { note: 'Zac handed it back to the AI' }); L.manual = false; L.botReplies = 0; L.needsYou = false; ev('info', `Handed ${L.name} back to the AI`, L.id); }
     else throw new Error('owner must be you or ai');
     save(); return { owner: ownerOf(L) };
   }
@@ -527,6 +605,10 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
     const t = String(text || '').trim().slice(0, 1000); if (!t) throw new Error('empty message');
     if (L.status === 'opted_out') throw new Error('this lead opted out');
     await sendSms(env, L.contactId, t, fetchImpl, brandOf(L) === 'zw' ? env.GHL_FROM_NUMBER_ZW : (env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER));
+    const theySaid = L.replies.filter((r) => !r.bot && !r.me).slice(-1)[0]?.text || '';
+    const botSaid = L.replies.filter((r) => r.bot).slice(-1)[0]?.text || '';
+    record('takeover', L, { theySaid, botSaid, zac: t, intent: L.lastIntent || '' });
+    S.pending = S.pending.filter((p) => p.id !== L.id || /https?:/.test(p.text)); // Zac is answering: drop the bot's queued chit-chat
     L.replies.push({ at: now().toISOString(), text: t, me: true }); L.manual = true; L.needsYou = false; L.unread = false;
     day().spend += segments(t) * COST.sms; ev('send', `You replied to ${L.name}`, L.id); save(); return { ok: true };
   }
@@ -534,6 +616,7 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
     load(); const L = S.leads[id]; if (!L) throw new Error('lead not found');
     const pipe = derivedStage(L)?.pipe || brandOf(L);
     if (!STAGES[pipe].some(([k]) => k === key)) throw new Error('unknown stage');
+    record('stage', L, { from: derivedStage(L)?.stage || '', to: key, intent: L.lastIntent || '' });
     await move(L, key, pipe);
     if (key === 'WON') { L.status = 'won'; L.needsYou = false; L.zwDueAt = null; }
     ev('info', `Moved ${L.name} to ${STAGES[pipe].find(([k]) => k === key)[1]}`, L.id); save(); return { ok: true };
@@ -604,5 +687,5 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
       setup: { claude: !!env.ANTHROPIC_API_KEY, ghl: ghlReady(), publicUrl: !!publicUrl(), stages: !!(stage('TEXTED') && stage('RESPOND_YES')), zwPipeline: zwPipe(), webhook: !!env.GHL_WEBHOOK_SECRET, alerts: !!env.ALERT_CONTACT_ID, numberRgs: !!(env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER), numberZw: !!env.GHL_FROM_NUMBER_ZW, inWindow: canSendNow(now(), 'MA') },
     };
   }
-  return { tick, handleInbound, setSettings, resume, resolve, view, testSend, endTest, leadsView, thread, reply, setStage, setOwner, payLink, pollPayments, metrics, _state: () => load() };
+  return { tick, handleInbound, setSettings, resume, resolve, view, testSend, endTest, leadsView, thread, reply, setStage, setOwner, payLink, pollPayments, metrics, learnNow, learnView, teach, forget, _state: () => load() };
 }
