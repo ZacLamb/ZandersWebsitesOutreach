@@ -10,6 +10,7 @@ import { buildIndex, parseCsv } from './exclusions.js';
 import { TOWNS, TRADES } from './towns.js';
 import { createAutopilot, STAGES } from './autopilot.js';
 import { PLANS, checkStripe } from './stripe.js';
+import { createPush } from './push.js';
 import { renderTemplatePage } from './sites.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -75,9 +76,11 @@ function searchProgress() {
 
 const digits10 = (p) => String(p || '').replace(/\D/g, '').slice(-10);
 const candidates = (skipIds, optOut) => { const st = readPushed(); return prospects().rows.filter((r) => r.tier !== 'C' && !r.state && !st[r.place_id] && !skipIds.has(r.place_id) && digits10(r.phone).length === 10 && !optOut.has(digits10(r.phone))); };
+const push = createPush(DATA_DIR, process.env.PUBLIC_URL || undefined);
 const autopilot = createAutopilot({
   dir: DATA_DIR,
   deps: {
+    notify: (m) => push.send(m),
     nextProspect: (skip, opt) => candidates(skip, opt)[0] || null,
     readyCount: (skip, opt) => candidates(skip, opt).length,
     markState: (id, v) => { const st = readPushed(); st[id] = v; fs.writeFileSync(PUSHED(), JSON.stringify(st)); },
@@ -143,9 +146,10 @@ const server = http.createServer(async (req, res) => {
     } catch (e) { return send(res, 400, { error: e.message }); }
   }
   // Public app shell files (icon + manifest) so the dashboard works as a home-screen app.
-  const pub = url.pathname.match(/^\/(manifest\.json|apple-touch-icon\.png|icon-192\.png|icon-512\.png)$/);
+  const pub = url.pathname.match(/^\/(manifest\.json|apple-touch-icon\.png|icon-192\.png|icon-512\.png|sw\.js)$/);
   if (req.method === 'GET' && pub) {
-    res.writeHead(200, { 'Content-Type': pub[1].endsWith('.json') ? 'application/manifest+json' : 'image/png', 'Cache-Control': 'public, max-age=86400' });
+    const ctype = pub[1].endsWith('.json') ? 'application/manifest+json' : pub[1].endsWith('.js') ? 'text/javascript' : 'image/png';
+    res.writeHead(200, { 'Content-Type': ctype, 'Cache-Control': pub[1] === 'sw.js' ? 'no-cache' : 'public, max-age=86400', ...(pub[1] === 'sw.js' ? { 'Service-Worker-Allowed': '/' } : {}) });
     return res.end(fs.readFileSync(path.join(ROOT, 'public', pub[1])));
   }
   // Sign-in: a remembered cookie (home-screen apps can't show the browser password popup). Basic auth still works.
@@ -179,6 +183,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/autopilot') return send(res, 200, autopilot.view());
     if (req.method === 'GET' && url.pathname === '/api/leads') return send(res, 200, { leads: autopilot.leadsView(), stages: STAGES, plans: PLANS, stripe: { rgs: !!process.env.STRIPE_KEY_RGS, zw: !!process.env.STRIPE_KEY_ZW } });
+    if (req.method === 'GET' && url.pathname === '/api/push/key') return send(res, 200, { key: push.publicKey(), devices: push.count() });
     if (req.method === 'GET' && url.pathname === '/api/metrics') return send(res, 200, autopilot.metrics());
     const tmatch = url.pathname.match(/^\/api\/thread\/([\w-]{3,200})$/);
     if (req.method === 'GET' && tmatch) { try { return send(res, 200, await autopilot.thread(tmatch[1])); } catch (e) { return send(res, 404, { error: e.message }); } }
@@ -199,6 +204,8 @@ const server = http.createServer(async (req, res) => {
         else return send(res, 404, { error: 'not found' });
         return send(res, 200, autopilot.view());
       }
+      if (url.pathname === '/api/push/subscribe') { try { push.subscribe(JSON.parse((await readBody(req, 1e4)) || '{}')); return send(res, 200, { ok: true, devices: push.count() }); } catch (e) { return send(res, 400, { error: e.message }); } }
+      if (url.pathname === '/api/push/test') { await push.send({ title: 'ZW Outreach', body: 'Notifications are on. You will get one for every reply.', url: '/' }); return send(res, 200, { ok: true, devices: push.count() }); }
       if (url.pathname === '/api/stripe/check') return send(res, 200, { rgs: await checkStripe(process.env, 'rgs'), zw: await checkStripe(process.env, 'zw') });
       if (url.pathname.startsWith('/api/lead/')) {
         const o = JSON.parse((await readBody(req, 1e5)) || '{}'); const id = String(o.id || '');

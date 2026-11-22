@@ -1,5 +1,5 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>ZW Outreach</title><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Outreach"><meta name="theme-color" content="#0f1115"><style>
+<title>ZW Outreach</title><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Outreach"><meta name="theme-color" content="#0f1115"><meta name="format-detection" content="telephone=no"><style>
 :root{--bg:#0f1115;--card:#171a21;--line:#262b36;--tx:#e8eaf0;--mut:#8b93a7;--ac:#4f8cff;--ok:#2fbf71;--bad:#ef5b5b;--warn:#f0b429}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,sans-serif}
 header{padding-top:max(12px,env(safe-area-inset-top))!important;position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -86,6 +86,9 @@ table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;p
 </div>
 </section>
 <section id="v-settings" style="display:none">
+<h2>Notifications</h2>
+<div class="card"><div class="small" id="pushText">Get a phone notification for every reply, even with the app closed.</div>
+  <div class="row" style="margin-top:8px"><button class="p" id="pushOn">Turn on notifications</button><button id="pushTest">Send test</button></div></div>
 <h2>Autopilot</h2>
 <div class="card"><div id="modeText" style="font-weight:700;margin-bottom:8px"></div>
   <div class="row"><button class="g" id="goLive">Live</button><button id="pauseBtn">Draft only</button><button class="d" id="offBtn">Off</button></div>
@@ -203,8 +206,9 @@ async function openThread(id){cur=id;if(view!=='inbox')show('inbox');const th=$(
   const sp=el('span');sp.style.flex='1';hd.append(sp);
   const sel=el('select');(L.stages[x.pipe]||[]).forEach(([k,n])=>{const o=el('option',null,n);o.value=k;if(k===x.stage)o.selected=true;sel.append(o)});
   sel.onchange=async()=>{try{await post('/api/lead/stage',{id:x.id,stage:sel.value});toast('Moved to '+sel.selectedOptions[0].textContent);loadLeadsW()}catch(e){toast(e.message)}};hd.append(sel);
-  const sub=el('div','small mut',[x.trade,x.town,x.phone].filter(Boolean).join(' · '));
+  const sub=el('div','small mut',[x.trade,x.town,x.phone?x.phone.replace(/(\d{3})(\d{3})(\d{4})/,'($1) $2-$3'):''].filter(Boolean).join(' · '));
   const links=el('div','row small');const site=x.brand==='zw'&&x.zwUrl?x.zwUrl:x.url;if(site){const a=el('a',null,'Their sample site');a.href=site;a.target='_blank';a.rel='noopener';links.append(a)}
+  if(T.lead.contactId){const c=el('a','btn','📞 Call from '+(x.brand==='zw'?"Zander's":'RGS')+' number');c.href='https://app.gohighlevel.com/v2/location/'+(A?.locationId||'')+'/contacts/detail/'+T.lead.contactId;c.target='_blank';c.rel='noopener';c.style.padding='6px 10px';links.append(c)}
   if(T.lead.contactId){const g=el('a',null,'Open in GHL');g.href='https://app.gohighlevel.com/v2/location/'+(A?.locationId||'')+'/contacts/detail/'+T.lead.contactId;g.target='_blank';g.rel='noopener';links.append(g)}
   if(x.why)links.append(el('span','mut','First text used: '+x.why));
   const ms=el('div','msgs');T.messages.forEach(m=>{const b=el('div','msg '+(m.out?'out':'in'),m.text);b.append(el('div','t',fmtT(m.at)));ms.append(b)});
@@ -241,4 +245,17 @@ async function loadMetrics(){let M;try{M=await (await fetch('/api/metrics')).jso
   M.days.slice().reverse().forEach(d=>{const tr=el('tr');tr.append(el('td',null,d.date),el('td','r',String(d.texts)),el('td','r',String(d.replies)),el('td','r',money(d.spend)));t.append(tr)});c.append(t);box.append(el('h2',null,'Last 14 days'),c)}
 setInterval(()=>{if(view==='inbox'||view==='pipe')loadLeadsW();else if(view==='metrics')loadMetrics();else fetch('/api/leads').then(r=>r.json()).then(j=>{L=j;const u=j.leads.filter(x=>x.unread||x.needsYou).length;$('unreadDot').style.display=u?'inline-block':'none';$('unreadDot').textContent=u}).catch(()=>{})},15000);
 show('inbox');
+
+// ---------- push notifications + app badge ----------
+const b64u=s=>{const p='='.repeat((4-s.length%4)%4),b=atob((s+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(b,c=>c.charCodeAt(0))};
+async function pushStatus(){const t=$('pushText');if(!('serviceWorker' in navigator)||!('PushManager' in window)){t.textContent=/iPhone|iPad/.test(navigator.userAgent)&&!navigator.standalone?'On iPhone: add this page to your Home Screen first (Share → Add to Home Screen), open it from there, then turn on notifications here.':'This browser does not support notifications.';$('pushOn').disabled=$('pushTest').disabled=true;return}
+  const k=await (await fetch('/api/push/key')).json();const reg=await navigator.serviceWorker.getRegistration();const sub=reg&&await reg.pushManager.getSubscription();
+  t.textContent=sub&&Notification.permission==='granted'?'✓ On for this device ('+k.devices+' device'+(k.devices===1?'':'s')+' total). You get a notification for every reply.':'Get a phone notification for every reply, even with the app closed.';$('pushOn').textContent=sub?'Re-connect this device':'Turn on notifications'}
+$('pushOn').onclick=async()=>{try{const perm=await Notification.requestPermission();if(perm!=='granted')return toast('Notifications were not allowed. Turn them on in iPhone Settings → Notifications → Outreach.');
+  const reg=await navigator.serviceWorker.register('/sw.js',{scope:'/'});await navigator.serviceWorker.ready;const k=await (await fetch('/api/push/key')).json();
+  const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64u(k.key)});await post('/api/push/subscribe',sub.toJSON());toast('Notifications are on');pushStatus()}catch(e){toast(e.message)}};
+$('pushTest').onclick=async()=>{try{await post('/api/push/test');toast('Test sent')}catch(e){toast(e.message)}};
+pushStatus().catch(()=>{});
+const _lw=loadLeadsW;loadLeadsW=async function(){await _lw();try{const u=(L?.leads||[]).filter(x=>x.unread||x.needsYou).length;if(navigator.setAppBadge)u?navigator.setAppBadge(u):navigator.clearAppBadge()}catch{}};
+{const q=new URLSearchParams(location.search).get('lead');if(q){history.replaceState(null,'','/');setTimeout(()=>openThread(q),300)}}
 </script></body></html>

@@ -303,6 +303,7 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
   }
 
   async function alertZac(text) {
+    if (/^PAID/.test(text)) { try { await deps.notify?.({ title: '💰 New client', body: text.slice(0, 180), url: '/' }); } catch {} }
     if (!env.ALERT_CONTACT_ID) return;
     try { await sendSms(env, env.ALERT_CONTACT_ID, ascii(text).slice(0, 300), fetchImpl); } catch (e) { ev('warn', `alert failed: ${e.message}`); }
   }
@@ -314,6 +315,8 @@ You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websit
     if (!L) return { ignored: true };
     const body = String(text || '').slice(0, 1000);
     L.replies.push({ at: now().toISOString(), text: body }); day().replies++; L.unread = true;
+    const unread = Object.values(S.leads).filter((x) => x.unread || x.needsYou).length;
+    try { await deps.notify?.({ title: `${L.name}${L.brand === 'zw' ? " (Zander's)" : ''}`, body: body.slice(0, 180), id: L.id, url: `/?lead=${encodeURIComponent(L.id)}`, badge: unread }); } catch {}
     if (isOptOut(body)) {
       L.status = 'opted_out'; if (!S.optOut.includes(L.phone)) S.optOut.push(L.phone); day().optouts++;
       ev('optout', `${L.name} opted out`, L.id);
