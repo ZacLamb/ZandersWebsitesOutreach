@@ -318,7 +318,7 @@ async function openThread(id){cur=id;if(view!=='inbox')show('inbox');const th=$(
   const who=el('div','who');who.append(el('b',null,x.name),el('span',null,[fmtPh(x.phone),brandName,x.trade,x.town].filter(Boolean).join(' · ')));
   hd.append(bk,el('div','av '+x.brand,initials(x.name)),who);
   const bar=el('div','tbar');
-  if(x.contactId){const c=el('a','pillbtn call','📞 Call');c.href=ghl;c.target='_blank';c.rel='noopener';bar.append(c)}
+  if(x.contactId&&x.status!=='opted_out'){const c=el('button','pillbtn call','📞 Call');c.onclick=async()=>{c.disabled=true;try{await post('/api/lead/call',{id:x.id});c.textContent='📞 Ringing your cell…';toast('Your cell will ring. Press any key to connect to '+x.name+' from the '+(x.brand==='zw'?"Zander's":'RGS')+' number.')}catch(e){toast(e.message)}setTimeout(()=>{c.disabled=false;c.textContent='📞 Call'},30000)};bar.append(c)}
   const sel=el('select','pillbtn');(L.stages[x.pipe]||[]).forEach(([k,n])=>{const o=el('option',null,n);o.value=k;if(k===x.stage)o.selected=true;sel.append(o)});
   if(x.pipe==='rgs'&&x.stage!=='OPTED_OUT'){const o=el('option',null,"Not interested → Zander's");o.value='LOST_TO_ZW';sel.append(o)}
   sel.onchange=async()=>{const v=sel.value;if(v==='LOST_TO_ZW'&&!confirm("Mark "+x.name+" not interested and hand them to Zander's? Zander's texts them in a week from its own number."))return openThread(x.id);

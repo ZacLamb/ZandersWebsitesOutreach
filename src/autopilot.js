@@ -743,6 +743,18 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
     if (key === 'WON') { L.status = 'won'; L.needsYou = false; L.zwDueAt = null; }
     ev('info', `Moved ${L.name} to ${STAGES[pipe].find(([k]) => k === key)[1]}`, L.id); save(); return { ok: true };
   }
+  // Call from the business number: tagging the contact fires the GHL "Call Bridge" workflow for that brand,
+  // which rings Zac's cell, then dials the lead from the brand's number once he presses a key.
+  async function callLead(id) {
+    load(); const L = S.leads[id]; if (!L?.contactId) throw new Error('lead has no GHL contact yet');
+    if (L.status === 'opted_out') throw new Error('they opted out, so no calls');
+    const t = now().getTime(); if (t - (L.callAt || 0) < 30e3) throw new Error('already calling, pick up your phone');
+    const brand = brandOf(L), tag = brand === 'zw' ? 'zw-call-zander' : 'zw-call-me';
+    try { await removeTags(env, L.contactId, [tag], fetchImpl); } catch {}
+    await addTags(env, L.contactId, [tag], fetchImpl);
+    L.callAt = t; ev('info', `Calling ${L.name} from the ${brand === 'zw' ? "Zander's" : 'RGS'} number (your cell rings first)`, L.id); save();
+    return { ok: true, brand };
+  }
   async function payLink(id, plan) {
     load(); const L = S.leads[id]; if (!L) throw new Error('lead not found');
     const brand = brandOf(L);
@@ -809,5 +821,5 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
       setup: { claude: !!env.ANTHROPIC_API_KEY, ghl: ghlReady(), publicUrl: !!publicUrl(), stages: !!(stage('TEXTED') && stage('RESPOND_YES')), zwPipeline: zwPipe(), webhook: !!env.GHL_WEBHOOK_SECRET, alerts: !!env.ALERT_CONTACT_ID, numberRgs: !!(env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER), numberZw: !!env.GHL_FROM_NUMBER_ZW, inWindow: canSendNow(now(), 'MA') },
     };
   }
-  return { tick, handleInbound, setSettings, resume, resolve, view, testSend, endTest, leadsView, thread, reply, setStage, setOwner, payLink, pollPayments, metrics, live, draftAction, feedback, learnNow, learnView, teach, forget, _state: () => load() };
+  return { tick, handleInbound, setSettings, resume, resolve, view, testSend, endTest, leadsView, thread, reply, setStage, setOwner, payLink, pollPayments, metrics, live, draftAction, feedback, callLead, learnNow, learnView, teach, forget, _state: () => load() };
 }
