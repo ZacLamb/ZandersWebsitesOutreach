@@ -222,6 +222,7 @@ const server = http.createServer(async (req, res) => {
         const o = JSON.parse((await readBody(req, 1e5)) || '{}'); const id = String(o.id || '');
         try {
           if (url.pathname === '/api/lead/reply') return send(res, 200, await autopilot.reply(id, o.text));
+          if (url.pathname === '/api/lead/nocall') return send(res, 200, autopilot.dismissCall(id));
           if (url.pathname === '/api/lead/call') return send(res, 200, await autopilot.callLead(id));
           if (url.pathname === '/api/lead/feedback') return send(res, 200, await autopilot.feedback(id, o.text, o.rewrite, o.note));
           if (url.pathname === '/api/lead/draft') return send(res, 200, await autopilot.draftAction(id, String(o.pid || ''), String(o.action || ''), o.text));

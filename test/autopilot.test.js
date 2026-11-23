@@ -465,3 +465,20 @@ test('manual "Not interested -> Zander\'s": queues the lead for Zander, closes t
   assert.equal(ap.view().zwScheduled, 1);
   await assert.rejects(ap.setStage('ChIJ1', 'LOST_TO_ZW').then(() => { L.zwSentAt = 1; return ap.setStage('ChIJ1', 'LOST_TO_ZW'); }), /already with Zander/);
 });
+
+test('to-call list: warm leads quiet 2 days after our last text, cold leads 2 days after the 3rd text; cleared by reply, call or dismiss', async () => {
+  let clock = SAT_3PM_ET.getTime(); const DAYMS = 864e5;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apc-')); const log = [];
+  const ap = createAutopilot({ env: { GHL_TOKEN: 't', GHL_LOCATION_ID: 'L' }, dir, fetchImpl: mockFetch(log), now: () => new Date(clock), deps: { nextProspect: () => null, readyCount: () => 0, markState() {}, jobRunning: () => false, startFind: () => false } });
+  const S = ap._state(); S.settings.mode = 'auto';
+  const iso = (d) => new Date(clock - d * DAYMS).toISOString();
+  S.leads.w = { id: 'w', name: 'Warm Co', contactId: 'cw', phone: '+1', brand: 'rgs', status: 'link_sent', linkSent: true, step: 1, lastSentAt: clock - 5 * DAYMS, replies: [{ at: iso(3), text: 'no' }, { at: iso(2.5), text: 'here it is', bot: true }] };
+  S.leads.c = { id: 'c', name: 'Cold Co', contactId: 'cc', phone: '+2', brand: 'rgs', status: 'sent', step: 3, lastSentAt: clock - 2.1 * DAYMS, replies: [] };
+  S.leads.n = { id: 'n', name: 'New Co', contactId: 'cn', phone: '+3', brand: 'rgs', status: 'link_sent', linkSent: true, step: 1, lastSentAt: clock - DAYMS, replies: [{ at: iso(1), text: 'yes' }, { at: iso(0.9), text: 'link', bot: true }] };
+  S.byContact.cw = 'w';
+  await ap.tick();
+  const v = ap.leadsView(); const by = (id) => v.find((x) => x.id === id);
+  assert.match(by('w').toCall, /Saw the sample site/); assert.match(by('c').toCall, /No reply to 3 texts/); assert.equal(by('n').toCall, '');
+  ap.dismissCall('c'); await ap.tick(); assert.equal(ap.leadsView().find((x) => x.id === 'c').toCall, '', 'dismissed stays off');
+  await ap.handleInbound({ contactId: 'cw', text: 'sorry been busy' }); assert.equal(S.leads.w.toCall, null);
+});

@@ -11,7 +11,7 @@ import { createPaymentLink, paidSession, PLANS, stripeKey } from './stripe.js';
 // Estimated unit costs in USD (Zac's SMS rate; the rest are rough and only used for the budget guard).
 export const COST = { sms: 0.008, site: 0.01, msg: 0.03, research: 0.03, triage: 0.005, search: 0.035 }; // site = per-trade template, filled per lead
 export const DEFAULTS = {
-  mode: 'off', dailyBudget: 5, dailyTextCap: 25, maxBotReplies: 2, zwDelayDays: 7,
+  mode: 'off', dailyBudget: 5, dailyTextCap: 25, maxBotReplies: 2, zwDelayDays: 7, callWarmDays: 2, callCold: true,
   offer: 'Revenue Generating Solutions: website build $497 one time, then $99/mo for hosting, changes and Google Business Profile setup. No contract. If they want the $497 build fee waived: pay the year up front ($1,188 for 12 months at $99) and the build is free. Optional local SEO is +$199/mo: we publish a new article on their site every day about their local area (their towns, local projects, seasonal tips for their trade), each one linked back to their service and town pages so Google ranks the whole site higher for local searches.',
   offerZw: "Zander's Websites: $20/mo, no setup fee, no contract. Zander is 7 and this is his first business; his dad helps him.",
 };
@@ -289,7 +289,7 @@ Return ONLY JSON: {"action": "offer" or "link", "text": "..."}`,
     if (zq) { zq.status = 'zw_no_response'; ev('info', `No response to Zander's text from ${zq.name}`, zq.id); await move(zq, 'NO_RESPONSE'); save(); return true; }
     const done = Object.values(S.leads).find((x) => quiet(x) && x.step === 3 && t - x.lastSentAt >= 4 * DAY);
     if (done) {
-      done.status = 'no_response'; ev('info', `No response from ${done.name}; moved to Zander's Websites (text goes out in ${S.settings.zwDelayDays} days)`, done.id);
+      clearCall(done); done.status = 'no_response'; ev('info', `No response from ${done.name}; moved to Zander's Websites (text goes out in ${S.settings.zwDelayDays} days)`, done.id);
       await toZander(done); save(); return true;
     }
     const due = Object.values(S.leads).find((x) => okNow(x) && quiet(x) && ((x.step === 1 && t - x.lastSentAt >= 3 * DAY) || (x.step === 2 && t - x.lastSentAt >= 4 * DAY)));
@@ -473,7 +473,7 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
     const id = S.byContact[contactId]; const L = id && S.leads[id];
     if (!L) return { ignored: true };
     const body = String(text || '').slice(0, 1000);
-    L.replies.push({ at: now().toISOString(), text: body }); day().replies++; L.unread = true;
+    L.replies.push({ at: now().toISOString(), text: body }); day().replies++; L.unread = true; clearCall(L);
     const unread = Object.values(S.leads).filter((x) => x.unread || x.needsYou).length;
     try { await deps.notify?.({ title: `${ownerOf(L) === 'you' ? '👤 ' : '🤖 '}${L.name}${L.brand === 'zw' ? " (Zander's)" : ''}`, body: body.slice(0, 180), id: L.id, url: `/?lead=${encodeURIComponent(L.id)}`, badge: unread }); } catch {}
     if (isOptOut(body)) {
@@ -567,11 +567,39 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
     }
   }
 
+  // "To call" list: warm leads that went quiet after replying, and cold leads that ignored all 3 RGS texts
+  // (flagged 2 days after the last follow-up, before they move to Zander's). Cleared by a reply, a call, a stage change or Dismiss.
+  const DONE_ST = ['opted_out', 'won', 'closed', 'bad_number', 'duplicate'];
+  function callScan() {
+    const t = now().getTime(); let n = 0;
+    for (const L of Object.values(S.leads)) {
+      if (L.test || !L.contactId || L.toCall || DONE_ST.includes(L.status) || brandOf(L) === 'zw') continue;
+      const ins = L.replies.filter((r) => !r.bot && !r.me), lastIn = ins.length ? Date.parse(ins.at(-1).at) : 0;
+      const lastOut = Math.max(L.lastSentAt || 0, ...L.replies.filter((r) => r.bot || r.me).map((r) => Date.parse(r.at) || 0));
+      if (L.callFlaggedFor === lastOut) continue;
+      let why = '';
+      if (ins.length && lastOut > lastIn && t - lastOut >= S.settings.callWarmDays * DAY && !S.pending.some((p) => p.id === L.id))
+        why = L.linkSent ? `Saw the sample site, quiet for ${Math.floor((t - lastOut) / DAY)} days` : `Replied, then quiet for ${Math.floor((t - lastOut) / DAY)} days`;
+      else if (S.settings.callCold && L.status === 'sent' && !ins.length && L.step === 3 && t - L.lastSentAt >= 2 * DAY)
+        why = "No reply to 3 texts (goes to Zander's in 2 days)";
+      if (why) { L.toCall = { at: new Date(t).toISOString(), why }; L.callFlaggedFor = lastOut; n++; ev('info', `To call: ${L.name} (${why})`, L.id); }
+    }
+    const e = etParts(now()), list = Object.values(S.leads).filter((L) => L.toCall);
+    if (list.length && e.hour >= 9 && e.hour < 11 && S.callPushDate !== e.date) {
+      S.callPushDate = e.date;
+      deps.notify?.({ title: `📞 ${list.length} lead${list.length > 1 ? 's' : ''} to call today`, body: list.slice(0, 4).map((L) => L.name).join(', '), url: '/?f=call' })?.catch?.(() => {});
+    }
+    if (n) save();
+  }
+  function clearCall(L, why) { if (L?.toCall) { L.toCall = null; if (why) ev('info', `${L.name} off the call list (${why})`, L.id); } }
+  function dismissCall(id) { load(); const L = S.leads[id]; if (!L) throw new Error('lead not found'); clearCall(L, 'dismissed'); save(); return { ok: true }; }
+
   async function tick() {
     if (busy) return; busy = true;
     try {
       load();
       await pollPayments();
+      try { callScan(); } catch (e) { ev('warn', `call list scan failed: ${e.message}`); }
       { const X = LRN(), e = etParts(now()); if (env.ANTHROPIC_API_KEY && e.hour >= 2 && e.hour < 6 && X.lastRunDate !== e.date) { try { await learnNow('nightly'); } catch (err) { X.lastRunDate = e.date; ev('warn', `learning run failed: ${err.message}`); } } }
       if (S.settings.mode === 'off' || S.paused) { if (S.pending.some((p) => S.leads[p.id]?.test)) await flushPending(true); return; }
       await flushPending();
@@ -636,6 +664,8 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
     if (Number.isFinite(+s.dailyTextCap)) n.dailyTextCap = Math.min(1000, Math.max(0, Math.floor(+s.dailyTextCap)));
     if (typeof s.offer === 'string') n.offer = s.offer.slice(0, 600);
     if (typeof s.offerZw === 'string') n.offerZw = s.offerZw.slice(0, 600);
+    if (s.callWarmDays != null && Number.isFinite(+s.callWarmDays)) n.callWarmDays = Math.min(14, Math.max(1, Math.round(+s.callWarmDays)));
+    if (typeof s.callCold === 'boolean') n.callCold = s.callCold;
     save();
   }
   const resume = () => { load().paused = null; ev('info', 'Resumed by Zac'); save(); };
@@ -693,7 +723,7 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
       const st = derivedStage(L) || { pipe: 'rgs', stage: 'TEXTED' };
       const lastIn = L.replies.filter((r) => !r.bot && !r.me).slice(-1)[0];
       return { id: L.id, name: L.name, trade: L.trade, town: L.town, phone: L.phone, brand: brandOf(L), pipe: st.pipe, stage: st.stage, status: L.status,
-        needsYou: !!L.needsYou, unread: !!L.unread, owner: ownerOf(L), lastAt: lastAt(L), last: lastIn?.text || '', intent: L.lastIntent || '', url: L.url || '', zwUrl: L.zwUrl || '',
+        needsYou: !!L.needsYou, unread: !!L.unread, owner: ownerOf(L), toCall: L.toCall?.why || '', lastAt: lastAt(L), last: lastIn?.text || '', intent: L.lastIntent || '', url: L.url || '', zwUrl: L.zwUrl || '',
         angle: L.angle || '', why: L.why || '', variant: VARIANTS[L.variant]?.label || '', paid: L.paid || null, payLinks: (L.payLinks || []).map(({ url, plan, brand, at }) => ({ url, plan, brand, at })), contactId: L.contactId };
     }).sort((a, b) => b.lastAt - a.lastAt);
   }
@@ -732,13 +762,14 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
       if (L.status === 'opted_out') throw new Error('they opted out, so they never get texted again');
       if (L.zwSentAt || brandOf(L) === 'zw') throw new Error("they're already with Zander's");
       record('stage', L, { from: derivedStage(L)?.stage || '', to: 'LOST (to Zander)', intent: L.lastIntent || '' });
-      L.status = 'closed'; L.needsYou = false; L.unread = false; S.pending = S.pending.filter((p) => p.id !== L.id);
+      L.status = 'closed'; L.needsYou = false; L.unread = false; clearCall(L); S.pending = S.pending.filter((p) => p.id !== L.id);
       await toZander(L);
       const when = new Date(L.zwDueAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
       ev('info', `You marked ${L.name} not interested; Zander's texts them ${when}`, L.id); save(); return { ok: true, zwOn: when };
     }
     if (!STAGES[pipe].some(([k]) => k === key)) throw new Error('unknown stage');
     record('stage', L, { from: derivedStage(L)?.stage || '', to: key, intent: L.lastIntent || '' });
+    clearCall(L);
     await move(L, key, pipe);
     if (key === 'WON') { L.status = 'won'; L.needsYou = false; L.zwDueAt = null; }
     ev('info', `Moved ${L.name} to ${STAGES[pipe].find(([k]) => k === key)[1]}`, L.id); save(); return { ok: true };
@@ -752,7 +783,7 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
     const brand = brandOf(L), tag = brand === 'zw' ? 'zw-call-zander' : 'zw-call-me';
     try { await removeTags(env, L.contactId, [tag], fetchImpl); } catch {}
     await addTags(env, L.contactId, [tag], fetchImpl);
-    L.callAt = t; ev('info', `Calling ${L.name} from the ${brand === 'zw' ? "Zander's" : 'RGS'} number (your cell rings first)`, L.id); save();
+    L.callAt = t; clearCall(L); ev('info', `Calling ${L.name} from the ${brand === 'zw' ? "Zander's" : 'RGS'} number (your cell rings first)`, L.id); save();
     return { ok: true, brand };
   }
   async function payLink(id, plan) {
@@ -772,7 +803,7 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
         if (!sess) continue;
         const P = PLANS[k.brand][k.plan];
         L.paid = { at: now().toISOString(), brand: k.brand, plan: k.plan, amount: (sess.amount_total || 0) / 100, mrr: P.mrr, email: sess.customer_details?.email || '' };
-        L.status = 'won'; L.needsYou = false; L.zwDueAt = null; L.inZwQueue = false;
+        L.status = 'won'; L.needsYou = false; L.zwDueAt = null; L.inZwQueue = false; clearCall(L);
         await move(L, 'WON', k.brand);
         ev('won', `PAID: ${L.name} - ${P.label} ($${L.paid.amount.toFixed(2)} today)`, L.id);
         await alertZac(`PAID! ${L.name} signed up: ${P.label}. $${L.paid.amount.toFixed(2)} collected.`);
@@ -821,5 +852,5 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
       setup: { claude: !!env.ANTHROPIC_API_KEY, ghl: ghlReady(), publicUrl: !!publicUrl(), stages: !!(stage('TEXTED') && stage('RESPOND_YES')), zwPipeline: zwPipe(), webhook: !!env.GHL_WEBHOOK_SECRET, alerts: !!env.ALERT_CONTACT_ID, numberRgs: !!(env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER), numberZw: !!env.GHL_FROM_NUMBER_ZW, inWindow: canSendNow(now(), 'MA') },
     };
   }
-  return { tick, handleInbound, setSettings, resume, resolve, view, testSend, endTest, leadsView, thread, reply, setStage, setOwner, payLink, pollPayments, metrics, live, draftAction, feedback, callLead, learnNow, learnView, teach, forget, _state: () => load() };
+  return { tick, handleInbound, setSettings, resume, resolve, view, testSend, endTest, leadsView, thread, reply, setStage, setOwner, payLink, pollPayments, metrics, live, draftAction, feedback, callLead, dismissCall, learnNow, learnView, teach, forget, _state: () => load() };
 }
