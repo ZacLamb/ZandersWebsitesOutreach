@@ -710,7 +710,7 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
     const mine = new Set(L.replies.filter((r) => r.me || r.edited).map((r) => r.text.trim()));
     const aiSet = new Set([L.msg, L.zwMsg, ...L.replies.filter((r) => r.bot && !r.edited).map((r) => r.text), templateMessage(L, L.url, 1), templateMessage(L, L.url, 2)].filter(Boolean).map((t) => String(t).trim()));
     const fb = new Set(LRN().corrections.filter((c) => c.kind === 'feedback' && c.id === L.id).map((c) => (c.botSaid || '').trim()));
-    msgs = msgs.map((m) => (!m.out ? m : { ...m, by: mine.has(m.text.trim()) ? 'you' : aiSet.has(m.text.trim()) ? 'ai' : 'you', feedback: fb.has(m.text.trim()) }));
+    msgs = msgs.map((m) => (!m.out ? m : { ...m, brand: L.zwSentAt && Date.parse(m.at) >= L.zwSentAt - 5e3 ? 'zw' : 'rgs', by: mine.has(m.text.trim()) ? 'you' : aiSet.has(m.text.trim()) ? 'ai' : 'you', feedback: fb.has(m.text.trim()) }));
     return { lead: leadsView().find((x) => x.id === id) || { id, name: L.name }, messages: msgs, plans: PLANS[brandOf(L)], stripe: !!stripeKey(env, brandOf(L)), n: L.replies.length };
   }
   async function reply(id, text) {
