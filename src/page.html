@@ -315,7 +315,9 @@ async function openThread(id){cur=id;if(view!=='inbox')show('inbox');const th=$(
   const bar=el('div','tbar');
   if(x.contactId){const c=el('a','pillbtn call','📞 Call');c.href=ghl;c.target='_blank';c.rel='noopener';bar.append(c)}
   const sel=el('select','pillbtn');(L.stages[x.pipe]||[]).forEach(([k,n])=>{const o=el('option',null,n);o.value=k;if(k===x.stage)o.selected=true;sel.append(o)});
-  sel.onchange=async()=>{try{await post('/api/lead/stage',{id:x.id,stage:sel.value});toast('Moved to '+sel.selectedOptions[0].textContent);loadLeadsW()}catch(e){toast(e.message)}};bar.append(sel);
+  if(x.pipe==='rgs'&&x.stage!=='OPTED_OUT'){const o=el('option',null,"Not interested → Zander's");o.value='LOST_TO_ZW';sel.append(o)}
+  sel.onchange=async()=>{const v=sel.value;if(v==='LOST_TO_ZW'&&!confirm("Mark "+x.name+" not interested and hand them to Zander's? Zander's texts them in a week from its own number."))return openThread(x.id);
+    try{const r=await post('/api/lead/stage',{id:x.id,stage:v});toast(v==='LOST_TO_ZW'?"Sent to Zander's. First text goes out "+r.zwOn+'.':'Moved to '+sel.selectedOptions[0].textContent);await loadLeadsW();if(v==='LOST_TO_ZW')openThread(x.id)}catch(e){toast(e.message);openThread(x.id)}};bar.append(sel);
   const site=x.brand==='zw'&&x.zwUrl?x.zwUrl:x.url;if(site){const a=el('a','pillbtn','🌐 Their site');a.href=site;a.target='_blank';a.rel='noopener';bar.append(a)}
   if(x.contactId){const g=el('a','pillbtn','GHL ↗');g.href=ghl;g.target='_blank';g.rel='noopener';bar.append(g)}
   if(x.paid)bar.append(el('span','pillbtn','✅ Paid '+money(x.paid.amount)));

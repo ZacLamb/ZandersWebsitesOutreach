@@ -303,7 +303,7 @@ Return ONLY JSON: {"action": "offer" or "link", "text": "..."}`,
           if (!z.zwUrl) { const slug = await generateSite(env, { name: z.name, phone: z.phone, trade: z.trade, town: z.town }, dir, fetchImpl, 'zw'); z.zwUrl = `${publicUrl()}/s/${slug}`; }
           const m2 = await zanderWrite(z);
           await sendSms(env, z.contactId, m2, fetchImpl, env.GHL_FROM_NUMBER_ZW);
-          d.texts++; d.spend += segments(m2) * COST.sms; z.zwSentAt = t; z.brand = 'zw'; z.status = 'zw_sent'; z.botReplies = 0; z.msg = m2; z.linkSent = false; z.url = z.zwUrl;
+          d.texts++; d.spend += segments(m2) * COST.sms; z.zwSentAt = t; z.brand = 'zw'; z.status = 'zw_sent'; z.botReplies = 0; z.manual = false; z.needsYou = false; z.msg = m2; z.linkSent = false; z.url = z.zwUrl;
           z.inZwQueue = false; await move(z, 'TEXTED');
           try { await addTags(env, z.contactId, ['zw-zander-pitch'], fetchImpl); } catch {}
           ev('send', `Zander's Websites text to ${z.name}`, z.id);
@@ -728,6 +728,15 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
   async function setStage(id, key) {
     load(); const L = S.leads[id]; if (!L) throw new Error('lead not found');
     const pipe = derivedStage(L)?.pipe || brandOf(L);
+    if (key === 'LOST_TO_ZW') { // RGS is a no: hand them to Zander's, first Zander text goes out after the usual delay
+      if (L.status === 'opted_out') throw new Error('they opted out, so they never get texted again');
+      if (L.zwSentAt || brandOf(L) === 'zw') throw new Error("they're already with Zander's");
+      record('stage', L, { from: derivedStage(L)?.stage || '', to: 'LOST (to Zander)', intent: L.lastIntent || '' });
+      L.status = 'closed'; L.needsYou = false; L.unread = false; S.pending = S.pending.filter((p) => p.id !== L.id);
+      await toZander(L);
+      const when = new Date(L.zwDueAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
+      ev('info', `You marked ${L.name} not interested; Zander's texts them ${when}`, L.id); save(); return { ok: true, zwOn: when };
+    }
     if (!STAGES[pipe].some(([k]) => k === key)) throw new Error('unknown stage');
     record('stage', L, { from: derivedStage(L)?.stage || '', to: key, intent: L.lastIntent || '' });
     await move(L, key, pipe);

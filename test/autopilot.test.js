@@ -456,3 +456,12 @@ test('thread labels AI vs Zac texts; feedback on an AI text becomes a live rule 
   const v = ap.learnView(); assert.equal(v.lessons[0].source, 'zac'); assert.equal(v.live, false);
   assert.ok((await ap.thread('ChIJ1')).messages.some((m) => m.feedback));
 });
+
+test('manual "Not interested -> Zander\'s": queues the lead for Zander, closes the RGS side, never for opt-outs', async () => {
+  const { ap } = setup(); ap.setSettings({ mode: 'auto' }); await ap.tick(); await ap.tick();
+  await ap.reply('ChIJ1', 'no worries');
+  const r = await ap.setStage('ChIJ1', 'LOST_TO_ZW'); assert.ok(r.zwOn);
+  const L = ap._state().leads.ChIJ1; assert.equal(L.status, 'closed'); assert.ok(L.zwDueAt > SAT_3PM_ET.getTime());
+  assert.equal(ap.view().zwScheduled, 1);
+  await assert.rejects(ap.setStage('ChIJ1', 'LOST_TO_ZW').then(() => { L.zwSentAt = 1; return ap.setStage('ChIJ1', 'LOST_TO_ZW'); }), /already with Zander/);
+});
