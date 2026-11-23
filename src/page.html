@@ -122,7 +122,7 @@ button,.btn{border-radius:12px;font-weight:600;border-color:var(--line);backgrou
 
 .own{font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:2px 7px;border-radius:999px;white-space:nowrap}
 .own.ai{background:rgba(110,168,255,.14);color:var(--rgs)}.own.you{background:rgba(255,122,26,.18);color:var(--ac2)}.own.done{background:var(--card2);color:var(--mut)}
-.ifilter{display:flex;gap:6px;margin:8px 0 4px}.ifilter button{font-size:13px;padding:6px 12px;border-radius:999px}.ifilter button.on{background:var(--tx);color:var(--bg);border-color:var(--tx)}
+.ifilter{display:flex;gap:6px;margin:8px 0 4px}.ifilter button{font-size:13px;padding:6px 12px;border-radius:999px}.ifilter#ibrand{margin-bottom:0}.ifilter#ibrand button.on{background:var(--ac);border-color:var(--ac);color:#1a0a00}.ifilter button.on{background:var(--tx);color:var(--bg);border-color:var(--tx)}
 .drafts:empty{display:none}.drafts{padding:0 12px 4px}.draft{border:1px dashed #3b82f6;background:rgba(59,130,246,.08);border-radius:16px;padding:10px 12px;margin:8px 0}
 .draft .dh{font-size:12px;font-weight:700;color:#7fb0ff;margin-bottom:6px;display:flex;gap:6px}.draft .dh span{flex:1}.draft .dt{font-size:15px;line-height:1.35;white-space:pre-wrap;word-break:break-word}
 .draft .da{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}.draft .da button{font-size:13px;padding:7px 12px;border-radius:999px}.draft textarea{width:100%;min-height:90px;font-size:16px;border-radius:12px;padding:9px;background:var(--bg);margin-top:2px}
@@ -138,7 +138,7 @@ button,.btn{border-radius:12px;font-weight:600;border-color:var(--line);backgrou
 <button data-v="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg><span>Settings</span></button>
 </nav></header>
 <main id="main">
-<section id="v-inbox"><div class="inbox"><div class="ilist"><input id="iq" class="search" placeholder="Search conversations"><div class="ifilter" id="ifilter"><button data-f="all" class="on">All</button><button data-f="you">👤 Yours</button><button data-f="ai">🤖 AI working</button></div><div id="ilist"></div></div>
+<section id="v-inbox"><div class="inbox"><div class="ilist"><input id="iq" class="search" placeholder="Search conversations"><div class="ifilter" id="ibrand"><button data-b="all" class="on">All brands</button><button data-b="rgs">RGS</button><button data-b="zw">Zander's</button></div><div class="ifilter" id="ifilter"><button data-f="all" class="on">All</button><button data-f="you">👤 Yours</button><button data-f="ai">🤖 AI working</button></div><div id="ilist"></div></div>
   <div class="ithread" id="ithread"><div class="mut">Pick a conversation.</div></div></div></section>
 <section id="v-pipe" style="display:none"><div class="seg"><button id="pRgs" class="on">RGS</button><button id="pZw">Zander's</button></div><div class="stagechips" id="stagechips"></div><div id="board" class="plist"></div></section>
 <section id="v-metrics" style="display:none"><div id="metrics"></div></section>
@@ -300,11 +300,14 @@ function leadRow(x,click){const r=el('div','irow'+(cur===x.id?' on':'')+(x.unrea
   pv.append(document.createTextNode(x.last?'“'+x.last+'”':stageName(x.pipe,x.stage)+(x.brand==='zw'?" · Zander's":'')));
   top.insertBefore(el('span','own '+x.owner,{ai:'🤖 AI',you:'👤 YOU',done:'DONE'}[x.owner]||''),top.lastChild);
   const ph=el('div','ph',fmtPh(x.phone));m.append(top,ph,pv);r.append(av,m);r.onclick=click;return r}
-let ifilt='all';document.querySelectorAll('#ifilter button').forEach(b=>b.onclick=()=>{ifilt=b.dataset.f;document.querySelectorAll('#ifilter button').forEach(x=>x.classList.toggle('on',x===b));renderInbox()});
+let ifilt='all',ibrand='all';document.querySelectorAll('#ibrand button').forEach(b=>b.onclick=()=>{ibrand=b.dataset.b;document.querySelectorAll('#ibrand button').forEach(x=>x.classList.toggle('on',x===b));renderInbox()});
+document.querySelectorAll('#ifilter button').forEach(b=>b.onclick=()=>{ifilt=b.dataset.f;document.querySelectorAll('#ifilter button').forEach(x=>x.classList.toggle('on',x===b));renderInbox()});
 function renderInbox(){const q=$('iq').value.toLowerCase(),box=$('ilist');box.replaceChildren();
-  const rows=L.leads.filter(x=>(ifilt==='all'||x.owner===ifilt)&&(!q||(x.name+' '+x.town+' '+x.trade).toLowerCase().includes(q)));
-  for(const b of document.querySelectorAll('#ifilter button')){const f=b.dataset.f;if(f!=='all'){const n=L.leads.filter(x=>x.owner===f).length;b.textContent=(f==='you'?'👤 Yours':'🤖 AI working')+' '+n}}
-  if(!rows.length)box.append(el('div','empty',q?'No matches.':ifilt==='you'?'Nothing waiting on you.':ifilt==='ai'?'The AI is not working any threads right now.':'No conversations yet. Leads show up here once Autopilot texts them.'));
+  const inB=x=>ibrand==='all'||x.pipe===ibrand;
+  const rows=L.leads.filter(x=>inB(x)&&(ifilt==='all'||x.owner===ifilt)&&(!q||(x.name+' '+x.town+' '+x.trade).toLowerCase().includes(q)));
+  for(const b of document.querySelectorAll('#ibrand button')){const k=b.dataset.b;if(k!=='all')b.textContent=(k==='rgs'?'RGS':"Zander's")+' '+L.leads.filter(x=>x.pipe===k).length}
+  for(const b of document.querySelectorAll('#ifilter button')){const f=b.dataset.f;if(f!=='all'){const n=L.leads.filter(x=>inB(x)&&x.owner===f).length;b.textContent=(f==='you'?'👤 Yours':'🤖 AI working')+' '+n}}
+  if(!rows.length)box.append(el('div','empty',q?'No matches.':ifilt==='you'?'Nothing waiting on you.':ifilt==='ai'?'The AI is not working any threads right now.':ibrand==='zw'?"Nobody with Zander's yet. RGS no's land here a week later.":'No conversations yet. Leads show up here once Autopilot texts them.'));
   rows.forEach(x=>box.append(leadRow(x,()=>openThread(x.id))))}
 async function openThread(id){cur=id;if(view!=='inbox')show('inbox');const th=$('ithread');th.replaceChildren(el('div','empty','Loading…'));document.body.classList.add('mthread');
   let T;try{const r=await fetch('/api/thread/'+encodeURIComponent(id));T=await r.json();if(!r.ok)throw new Error(T.error)}catch(e){th.replaceChildren(el('div','empty',e.message));return}
