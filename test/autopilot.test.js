@@ -482,3 +482,16 @@ test('to-call list: warm leads quiet 2 days after our last text, cold leads 2 da
   ap.dismissCall('c'); await ap.tick(); assert.equal(ap.leadsView().find((x) => x.id === 'c').toCall, '', 'dismissed stays off');
   await ap.handleInbound({ contactId: 'cw', text: 'sorry been busy' }); assert.equal(S.leads.w.toCall, null);
 });
+
+test('a contact with DND on is skipped as opted out and does not pause autopilot', async () => {
+  const log = []; const base = mockFetch(log);
+  const fx = async (u, init = {}) => {
+    if (u.endsWith('/conversations/messages') && init.method === 'POST') { log.push({ url: u }); const j = { statusCode: 400, message: 'Cannot send message as DND is active for SMS.' }; return { ok: false, status: 400, json: async () => j, text: async () => JSON.stringify(j) }; }
+    return base(u, init);
+  };
+  const { ap } = setup({}, fx); ap.setSettings({ mode: 'auto' });
+  for (let i = 0; i < 8; i++) { ap._state().nextSendAt = 0; await ap.tick(); }
+  const L = ap._state().leads.ChIJ1;
+  assert.equal(L.status, 'opted_out'); assert.equal(L.dnd, true); assert.equal(ap.view().paused, null);
+  assert.equal(log.filter((l) => l.url.endsWith('/conversations/messages')).length, 1, 'tried once, never again');
+});

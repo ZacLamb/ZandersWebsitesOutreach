@@ -332,9 +332,18 @@ Return ONLY JSON: {"action": "offer" or "link", "text": "..."}`,
       ev('send', `${step === 0 ? 'Texted' : 'Follow-up ' + step + ' to'} ${L.name}`, L.id);
       const gap = (10.5 * 3600e3) / effCap(); S.nextSendAt = t + gap * (0.7 + Math.random() * 0.6);
     } catch (e) {
-      d.errors++; ev('error', `Send failed for ${L.name}: ${e.message}`, L.id);
-      if (/landline|invalid|not a valid|cannot be sent/i.test(e.message)) { L.status = 'bad_number'; await move(L, 'BAD_NUMBER'); }
-      if (d.errors >= 5) pause('5 send errors in a row. Check the number/A2P status in GHL, then resume.');
+      // Problems with this one contact (DND on, landline, bad number) take the lead out and don't count toward the pause.
+      if (/DND|do not disturb/i.test(e.message)) {
+        L.status = 'opted_out'; L.dnd = true; L.zwDueAt = null; L.inZwQueue = false; if (!S.optOut.includes(L.phone)) S.optOut.push(L.phone);
+        ev('info', `${L.name} has Do Not Disturb on in GHL; skipped and never texted`, L.id); await move(L, 'OPTED_OUT');
+      } else if (/landline|invalid|not a valid|cannot be sent|not sms capable/i.test(e.message)) {
+        L.status = 'bad_number'; ev('info', `${L.name}: number can't get texts; skipped`, L.id); await move(L, 'BAD_NUMBER');
+      } else {
+        d.errors++; ev('error', `Send failed for ${L.name}: ${e.message}`, L.id);
+        L.sendFails = (L.sendFails || 0) + 1; if (L.sendFails >= 2) { L.status = 'send_failed'; ev('warn', `Gave up on ${L.name} after 2 failed sends`, L.id); }
+        S.nextSendAt = t + 5 * 60e3; // back off before the next try
+        if (d.errors >= 5) pause('5 send errors in a row. Check the number/A2P status in GHL, then resume.');
+      }
     }
     save(); return true;
   }
