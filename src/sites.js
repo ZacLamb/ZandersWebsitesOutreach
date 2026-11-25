@@ -74,6 +74,11 @@ export function withPhotos(html, trade) {
   const [h, a, b] = stockFor(trade);
   const alt = esc(String(trade || 'local service') + ' work');
   const band = `<section style="padding:28px 16px;background:#fff"><div style="max-width:1120px;margin:0 auto;display:grid;gap:12px;grid-template-columns:2fr 1fr"><img src="${h}" alt="${alt}" style="width:100%;height:100%;min-height:220px;max-height:420px;object-fit:cover;border-radius:14px;grid-row:span 2"><img src="${a}" alt="${alt}" style="width:100%;height:100%;min-height:104px;max-height:204px;object-fit:cover;border-radius:14px"><img src="${b}" alt="${alt}" style="width:100%;height:100%;min-height:104px;max-height:204px;object-fit:cover;border-radius:14px"></div></section>`;
+  // Hero gets the main photo behind it (dark overlay keeps the text readable).
+  const bg = `background:linear-gradient(rgba(10,14,12,.62),rgba(10,14,12,.45)),url('${h}') center/cover no-repeat!important;`;
+  html = html.replace(/<(section|header|div)(\s[^>]*class=["'][^"']*\bhero\b[^"']*["'][^>]*)>/i, (m, tag, attrs) => {
+    return /\sstyle=["']/i.test(attrs) ? `<${tag}${attrs.replace(/\sstyle=(["'])/i, (x, q) => ` style=${q}${bg}`)}>` : `<${tag}${attrs} style="${bg}">`;
+  });
   const i = html.search(/<\/section>/i);
   return i >= 0 ? html.slice(0, i + 10) + band + html.slice(i + 10) : html.replace(/<body([^>]*)>/i, `<body$1>${band}`);
 }
