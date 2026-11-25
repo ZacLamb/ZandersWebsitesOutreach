@@ -128,6 +128,7 @@ button,.btn{border-radius:12px;font-weight:600;border-color:var(--line);backgrou
 .drafts:empty{display:none}.drafts{padding:0 12px 4px}.draft{border:1px dashed #3b82f6;background:rgba(59,130,246,.08);border-radius:16px;padding:10px 12px;margin:8px 0}
 .draft .dh{font-size:12px;font-weight:700;color:#7fb0ff;margin-bottom:6px;display:flex;gap:6px}.draft .dh span{flex:1}.draft .dt{font-size:15px;line-height:1.35;white-space:pre-wrap;word-break:break-word}
 .draft .da{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}.draft .da button{font-size:13px;padding:7px 12px;border-radius:999px}.draft textarea{width:100%;min-height:90px;font-size:16px;border-radius:12px;padding:9px;background:var(--bg);margin-top:2px}
+.siteinfo{padding:7px 14px;font-size:12.5px;color:var(--mut,#9aa3b2);border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.siteinfo b{color:var(--tx)}.siteinfo a{color:var(--ac2)}
 .irow .ph{font-size:12.5px;color:var(--mut,#9aa3b2);font-variant-numeric:tabular-nums;margin:1px 0 2px}
 .tag.call{background:rgba(255,122,26,.18);color:var(--ac2)}#ifilter button.hasn{border-color:var(--ac);color:var(--ac2)}
 .callbar{display:flex;align-items:center;gap:8px;padding:9px 14px;border-bottom:1px solid var(--line);font-size:13px;background:rgba(255,122,26,.12)}.callbar span{flex:1}.callbar button{font-size:12.5px;padding:6px 11px;border-radius:999px}
@@ -296,6 +297,7 @@ async function loadLeadsW(){try{L=await (await fetch('/api/leads')).json()}catch
 const stageName=(pipe,k)=>((L?.stages?.[pipe]||[]).find(s=>s[0]===k)||[,k])[1];
 $('iq').oninput=()=>renderInbox();
 const initials=n=>(n||'?').replace(/[^A-Za-z0-9 &]/g,'').split(/\s+/).filter(w=>!/^(inc|llc|co|corp|the|of|and|&)$/i.test(w)).slice(0,2).map(w=>w[0]).join('').toUpperCase()||'?';
+const dom=u=>String(u||'').replace(/^https?:\/\//i,'').replace(/^www\./i,'').replace(/\/$/,'').slice(0,40);
 const fmtPh=p=>{const d=String(p||'').replace(/\D/g,'').slice(-10);return d.length===10?'('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6):String(p||'')};
 function leadRow(x,click){const r=el('div','irow'+(x.pipe==='zw'||x.brand==='zw'?' zw':'')+(cur===x.id?' on':'')+(x.unread||x.needsYou?' unread':''));
   const av=el('div','av '+x.brand,initials(x.name));if(x.unread||x.needsYou)av.append(el('span','u'));
@@ -306,7 +308,7 @@ function leadRow(x,click){const r=el('div','irow'+(x.pipe==='zw'||x.brand==='zw'
   else if(x.needsYou)pv.append(el('span','tag hot','NEEDS YOU'),document.createTextNode(' '));
   pv.append(document.createTextNode(x.last?'“'+x.last+'”':stageName(x.pipe,x.stage)+(x.brand==='zw'?" · Zander's":'')));
   top.insertBefore(el('span','own '+x.owner,{ai:'🤖 AI',you:'👤 YOU',done:'DONE'}[x.owner]||''),top.lastChild);
-  const ph=el('div','ph',fmtPh(x.phone));m.append(top,ph,pv);r.append(av,m);r.onclick=click;return r}
+  const ph=el('div','ph',fmtPh(x.phone)+' · '+(x.website?'🔗 '+dom(x.website):'no website'));m.append(top,ph,pv);r.append(av,m);r.onclick=click;return r}
 let ifilt=new URLSearchParams(location.search).get('f')==='call'?'call':'all',ibrand='all';document.querySelectorAll('#ibrand button').forEach(b=>b.onclick=()=>{ibrand=b.dataset.b;document.querySelectorAll('#ibrand button').forEach(x=>x.classList.toggle('on',x===b));renderInbox()});
 document.querySelectorAll('#ifilter button').forEach(b=>b.onclick=()=>{ifilt=b.dataset.f;document.querySelectorAll('#ifilter button').forEach(x=>x.classList.toggle('on',x===b));renderInbox()});
 function renderInbox(){const q=$('iq').value.toLowerCase(),box=$('ilist');box.replaceChildren();
@@ -330,7 +332,8 @@ async function openThread(id){cur=id;if(view!=='inbox')show('inbox');const th=$(
   if(x.pipe==='rgs'&&x.stage!=='OPTED_OUT'){const o=el('option',null,"Not interested → Zander's");o.value='LOST_TO_ZW';sel.append(o)}
   sel.onchange=async()=>{const v=sel.value;if(v==='LOST_TO_ZW'&&!confirm("Mark "+x.name+" not interested and hand them to Zander's? Zander's texts them in a week from its own number."))return openThread(x.id);
     try{const r=await post('/api/lead/stage',{id:x.id,stage:v});toast(v==='LOST_TO_ZW'?"Sent to Zander's. First text goes out "+r.zwOn+'.':'Moved to '+sel.selectedOptions[0].textContent);await loadLeadsW();if(v==='LOST_TO_ZW')openThread(x.id)}catch(e){toast(e.message);openThread(x.id)}};bar.append(sel);
-  const site=x.brand==='zw'&&x.zwUrl?x.zwUrl:x.url;if(site){const a=el('a','pillbtn','🌐 Their site');a.href=site;a.target='_blank';a.rel='noopener';bar.append(a)}
+  if(x.website){const w=el('a','pillbtn','🔗 Their current site');w.href=/^https?:/i.test(x.website)?x.website:'https://'+x.website;w.target='_blank';w.rel='noopener';bar.append(w)}
+  const site=x.brand==='zw'&&x.zwUrl?x.zwUrl:x.url;if(site){const a=el('a','pillbtn','🌐 Our sample');a.href=site;a.target='_blank';a.rel='noopener';bar.append(a)}
   if(x.contactId){const g=el('a','pillbtn','GHL ↗');g.href=ghl;g.target='_blank';g.rel='noopener';bar.append(g)}
   if(x.paid)bar.append(el('span','pillbtn','✅ Paid '+money(x.paid.amount)));
   const ob=el('div','ownbar '+x.owner);
@@ -338,6 +341,7 @@ async function openThread(id){cur=id;if(view!=='inbox')show('inbox');const th=$(
   ob.append(el('span',null,otext));
   if(x.owner!=='done'){const ob2=el('button',null,x.owner==='ai'?'Take over':'Hand back to AI');ob2.onclick=async()=>{try{await post('/api/lead/owner',{id:x.id,owner:x.owner==='ai'?'you':'ai'});toast(x.owner==='ai'?'It is yours now':'The AI has it again');await loadLeadsW();openThread(x.id)}catch(e){toast(e.message)}};ob.append(ob2)}
   let cs=null;if(x.toCall){cs=el('div','callbar');cs.append(el('span',null,'📞 To call: '+x.toCall));const cb=el('button','p','Call now');cb.onclick=()=>bar.querySelector('.call')?.click();const dm=el('button',null,'Dismiss');dm.onclick=async()=>{try{await post('/api/lead/nocall',{id:x.id});cs.remove();await loadLeadsW()}catch(e){toast(e.message)}};cs.append(cb,dm)}
+  const si=el('div','siteinfo');si.append(el('b',null,x.website?'Current site: ':'Current site: '));if(x.website){const a=el('a',null,dom(x.website));a.href=/^https?:/i.test(x.website)?x.website:'https://'+x.website;a.target='_blank';a.rel='noopener';si.append(a)}if(x.siteNote)si.append(document.createTextNode((x.website?' · ':'')+x.siteNote));
   const ms=el('div','msgs');if(x.why)ms.append(el('div','why','First text used: '+x.why));
   T.messages.forEach(m=>{const who=m.out?(m.by==='you'?'you':'ai'):'';const zwm=m.out&&m.brand==='zw';const b=el('div','msg '+(m.out?'out '+who+(zwm?' zw':''):'in'),m.text);
     const t=el('div','t');if(m.out)t.append(el('b',null,(zwm?"Zander's ":'')+(who==='you'?'You · ':'🤖 AI · ')));t.append(fmtT(m.at)+(who==='ai'?(m.feedback?' · ✓ feedback given':' · tap to give feedback'):''));b.append(t);ms.append(b);
@@ -357,7 +361,7 @@ async function openThread(id){cur=id;if(view!=='inbox')show('inbox');const th=$(
   const pb=el('button','payb','💳');pb.title='Payment link';pb.onclick=()=>sheet.classList.toggle('open');
   const send=el('button','sendb','↑');send.onclick=async()=>{if(!ta.value.trim())return;send.disabled=true;try{await post('/api/lead/reply',{id:x.id,text:ta.value});ta.value='';grow();toast('Sent');openThread(x.id);loadLeadsW()}catch(e){toast(e.message)}send.disabled=false};
   const brow=el('div','bar');brow.append(pb,ta,send);comp.append(sheet,brow);
-  th.classList.toggle('zwt',x.brand==='zw');th.append(...[hd,bar,ob,cs,ms,dr,comp].filter(Boolean));ms.scrollTop=ms.scrollHeight;renderInbox();liveThread(x.id,dr,T.n)}
+  th.classList.toggle('zwt',x.brand==='zw');th.append(...[hd,bar,si,ob,cs,ms,dr,comp].filter(Boolean));ms.scrollTop=ms.scrollHeight;renderInbox();liveThread(x.id,dr,T.n)}
 
 // While a thread is open: bot replies that are "set to send" show here and wait for you (Send now / Edit / Cancel).
 let liveT=null,liveTick=null,editing=null;

@@ -59,6 +59,15 @@ export function angleOf(L) {
   if (site?.copyrightYear && site.copyrightYear < new Date().getFullYear() - 2) return 'Outdated site';
   return 'Has a site';
 }
+// One line on their current site for the dashboard (what we found before texting them).
+export function siteNote(L) {
+  const s = L.facts?.site;
+  if (!L.website) return 'No website on their Google listing';
+  if (/facebook\.com/i.test(L.website)) return 'Facebook page only';
+  if (!s) return '';
+  if (!s.works) return `Site didn't load${s.status ? ` (error ${s.status})` : ''}`;
+  return [s.builder && `built on ${s.builder}`, !s.mobileFriendly && 'not mobile friendly', !s.https && 'not secure (no https)', s.copyrightYear && `© ${s.copyrightYear}`].filter(Boolean).join(' · ') || 'Site loads fine';
+}
 const hook = (p) => ({ none: "doesn't have a website on its Google listing", 'social-only': 'is only on Facebook with no website', 'builder-subdomain': 'has a website that looked a bit outdated' }[p.web_type] || 'had a website that looked a bit outdated');
 // First texts ask permission (no link). The sample link goes out only after they say yes.
 export function zanderMessage(p) {
@@ -733,7 +742,7 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
       const lastIn = L.replies.filter((r) => !r.bot && !r.me).slice(-1)[0];
       return { id: L.id, name: L.name, trade: L.trade, town: L.town, phone: L.phone, brand: brandOf(L), pipe: st.pipe, stage: st.stage, status: L.status,
         needsYou: !!L.needsYou, unread: !!L.unread, owner: ownerOf(L), toCall: L.toCall?.why || '', lastAt: lastAt(L), last: lastIn?.text || '', intent: L.lastIntent || '', url: L.url || '', zwUrl: L.zwUrl || '',
-        angle: L.angle || '', why: L.why || '', variant: VARIANTS[L.variant]?.label || '', paid: L.paid || null, payLinks: (L.payLinks || []).map(({ url, plan, brand, at }) => ({ url, plan, brand, at })), contactId: L.contactId };
+        angle: L.angle || '', why: L.why || '', website: L.website || '', siteNote: siteNote(L), variant: VARIANTS[L.variant]?.label || '', paid: L.paid || null, payLinks: (L.payLinks || []).map(({ url, plan, brand, at }) => ({ url, plan, brand, at })), contactId: L.contactId };
     }).sort((a, b) => b.lastAt - a.lastAt);
   }
   async function thread(id) {
