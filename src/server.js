@@ -11,7 +11,7 @@ import { TOWNS, TRADES } from './towns.js';
 import { createAutopilot, STAGES } from './autopilot.js';
 import { PLANS, checkStripe } from './stripe.js';
 import { createPush } from './push.js';
-import { renderTemplatePage } from './sites.js';
+import { renderTemplatePage, hasPhotos, withPhotos } from './sites.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA_DIR = path.resolve(process.env.DATA_DIR || ROOT);
@@ -117,7 +117,12 @@ const server = http.createServer(async (req, res) => {
     }
     const f = path.join(DATA_DIR, 'sites', `${slug}.html`);
     if ((sub && sub !== '/') || !fs.existsSync(f)) return send(res, 404, 'Not found', 'text/plain');
-    res.writeHead(200, pageHeaders); return res.end(fs.readFileSync(f));
+    let page = fs.readFileSync(f, 'utf8');
+    if (!hasPhotos(page)) { // older samples were built without pictures: add trade photos on the way out
+      const L = Object.values(autopilot._state().leads || {}).find((x) => (x.url || '').includes(slug) || (x.zwUrl || '').includes(slug));
+      page = withPhotos(page, L?.trade);
+    }
+    res.writeHead(200, pageHeaders); return res.end(page);
   }
   const dm = url.pathname.match(/^\/demo\/([a-z0-9-]{2,40})(\/.*)?$/); // public preview of a template with made-up details
   if (req.method === 'GET' && dm) {

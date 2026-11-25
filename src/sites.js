@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { askClaude } from './claude.js';
+import { stockFor } from './stock.js';
 
 export const slugify = (name) => String(name).toLowerCase().replace(/['\u2019]/g, '').replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'site';
 export const newSlug = (name) => `${slugify(name)}-${crypto.randomBytes(3).toString('hex')}`;
@@ -23,12 +24,12 @@ export function withBanner(html, name, brand = 'rgs') {
 
 // One Claude-written template per TRADE (cached on disk), personalized per lead by plain text substitution.
 // Cost is ~zero per lead. The deeper custom build (town pages, services, logo) only happens once they show interest.
-const TOKENS = ['[[NAME]]', '[[TOWN]]', '[[PHONE]]', '[[PHONE_DIGITS]]'];
+const TOKENS = ['[[NAME]]', '[[TOWN]]', '[[PHONE]]', '[[PHONE_DIGITS]]', '[[IMG_HERO]]', '[[IMG_1]]', '[[IMG_2]]'];
 async function getTemplate(env, trade, dir, fetchImpl) {
-  const f = path.join(dir, 'sites', 'templates', `${slugify(trade)}.html`);
+  const f = path.join(dir, 'sites', 'templates', `${slugify(trade)}-v2.html`);
   if (fs.existsSync(f)) return fs.readFileSync(f, 'utf8');
   const out = await askClaude(env, {
-    system: `You build one-page marketing sample websites for small local trade businesses. Output ONE complete HTML document (doctype to </html>) with inline CSS only. No JavaScript, no forms, no external scripts. Mobile-first, clean, modern, fast. This is a reusable TEMPLATE for the trade "${trade}": use these exact placeholders wherever the business details go: [[NAME]] (business name), [[TOWN]] (town and state), [[PHONE]] (display phone), [[PHONE_DIGITS]] (digits only, for tel: links). Sections: hero with a call button (href="tel:[[PHONE_DIGITS]]"), typical services for this trade, service area mentioning [[TOWN]], why choose us, contact with [[PHONE]]. STRICT: do not invent years in business, licenses, awards, owner names, testimonials, prices, ratings or guarantees. No stock-photo URLs; use CSS shapes/gradients. Return only the HTML.`,
+    system: `You build one-page marketing sample websites for small local trade businesses. Output ONE complete HTML document (doctype to </html>) with inline CSS only. No JavaScript, no forms, no external scripts. Mobile-first, clean, modern, fast. This is a reusable TEMPLATE for the trade "${trade}": use these exact placeholders wherever the business details go: [[NAME]] (business name), [[TOWN]] (town and state), [[PHONE]] (display phone), [[PHONE_DIGITS]] (digits only, for tel: links). Sections: hero with a call button (href="tel:[[PHONE_DIGITS]]"), typical services for this trade, service area mentioning [[TOWN]], why choose us, contact with [[PHONE]]. PHOTOS (required): the hero must use the photo [[IMG_HERO]] as a full-bleed background (background-image:url('[[IMG_HERO]]'), cover, with a dark gradient overlay so white text reads well); use <img src="[[IMG_1]]"> and <img src="[[IMG_2]]"> (object-fit:cover, rounded corners, alt text describing the trade work) in the services and why-choose-us sections, and you may reuse [[IMG_HERO]] once more. Use no other image URLs. STRICT: do not invent years in business, licenses, awards, owner names, testimonials, prices, ratings or guarantees. Return only the HTML.`,
     user: `Trade: ${trade}`, maxTokens: 6000,
   }, fetchImpl);
   const m = out.match(/<!doctype html[\s\S]*<\/html>/i) || out.match(/<html[\s\S]*<\/html>/i);
@@ -65,6 +66,17 @@ export function fillTokens(html, d) {
   const v = { NAME: esc(d.name), PHONE: esc(pretty), PHONE_DIGITS: digits, CITY: esc(city), STATE: esc(state), TOWN: esc(d.town || ''), ASSET: `/t/${d.tpl}` };
   return html.replace(/\[\[(NAME|PHONE_DIGITS|PHONE|CITY|STATE|TOWN|ASSET)\]\]/g, (_, k) => v[k]);
 }
+// Pages with no pictures at all (older one-page samples, templates whose photos were stripped) get a photo band
+// with stock photos for their trade right after the hero. Generic trade photos, no claims about whose work it is.
+export const hasPhotos = (html) => /<img\s[^>]*src=["']https?:|url\(['"]?https?:[^)]*\.(png|jpe?g|webp)/i.test(html);
+export function withPhotos(html, trade) {
+  if (hasPhotos(html)) return html;
+  const [h, a, b] = stockFor(trade);
+  const alt = esc(String(trade || 'local service') + ' work');
+  const band = `<section style="padding:28px 16px;background:#fff"><div style="max-width:1120px;margin:0 auto;display:grid;gap:12px;grid-template-columns:2fr 1fr"><img src="${h}" alt="${alt}" style="width:100%;height:100%;min-height:220px;max-height:420px;object-fit:cover;border-radius:14px;grid-row:span 2"><img src="${a}" alt="${alt}" style="width:100%;height:100%;min-height:104px;max-height:204px;object-fit:cover;border-radius:14px"><img src="${b}" alt="${alt}" style="width:100%;height:100%;min-height:104px;max-height:204px;object-fit:cover;border-radius:14px"></div></section>`;
+  const i = html.search(/<\/section>/i);
+  return i >= 0 ? html.slice(0, i + 10) + band + html.slice(i + 10) : html.replace(/<body([^>]*)>/i, `<body$1>${band}`);
+}
 export function renderTemplatePage(d, page, slug) {
   const t = loadTemplates().find((x) => x.id === d.tpl);
   if (!t) return null;
@@ -72,6 +84,7 @@ export function renderTemplatePage(d, page, slug) {
   const f = path.join(t.dir, 'pages', name);
   if (!fs.existsSync(f)) return null;
   let html = fillTokens(fs.readFileSync(f, 'utf8'), d);
+  if (!page || page === '/') html = withPhotos(html, d.trade || (t.trades || [])[0]);
   html = html.replace(/<head([^>]*)>/i, `<head$1><base href="/s/${slug}/">`);
   return withBanner(html, d.name, d.brand);
 }
@@ -81,16 +94,17 @@ export async function generateSite(env, p, dir, fetchImpl = fetch, brand = 'rgs'
   if (tpl) {
     const slug = newSlug(p.name);
     fs.mkdirSync(path.join(dir, 'sites'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'sites', `${slug}.json`), JSON.stringify({ tpl: tpl.id, name: p.name, phone: p.phone, town: p.town, brand }));
+    fs.writeFileSync(path.join(dir, 'sites', `${slug}.json`), JSON.stringify({ tpl: tpl.id, name: p.name, phone: p.phone, town: p.town, trade: p.trade, brand }));
     return slug;
   }
   const base = await getTemplate(env, p.trade, dir, fetchImpl);
   const digits = String(p.phone || '').replace(/\D/g, '').slice(-10);
   const pretty = digits.length === 10 ? `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}` : String(p.phone || '');
-  const vals = { '[[NAME]]': esc(p.name), '[[TOWN]]': esc(p.town), '[[PHONE]]': esc(pretty), '[[PHONE_DIGITS]]': digits };
+  const st = stockFor(p.trade);
+  const vals = { '[[NAME]]': esc(p.name), '[[TOWN]]': esc(p.town), '[[PHONE]]': esc(pretty), '[[PHONE_DIGITS]]': digits, '[[IMG_HERO]]': st[0], '[[IMG_1]]': st[1], '[[IMG_2]]': st[2] };
   let html = base; for (const t of TOKENS) html = html.split(t).join(vals[t]);
   const slug = newSlug(p.name);
   fs.mkdirSync(path.join(dir, 'sites'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'sites', `${slug}.html`), withBanner(html, p.name, brand));
+  fs.writeFileSync(path.join(dir, 'sites', `${slug}.html`), withBanner(withPhotos(html, p.trade), p.name, brand));
   return slug;
 }
