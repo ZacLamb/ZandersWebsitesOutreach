@@ -5,14 +5,14 @@ import path from 'node:path';
 import { askClaude } from './claude.js';
 import { research, brief } from './research.js';
 import { generateSite } from './sites.js';
-import { stageProspect, sendSms, moveOpportunity, addTags, removeTags, getThread } from './ghl.js';
+import { stageProspect, sendSms, moveOpportunity, addTags, removeTags, getThread, setWhisper } from './ghl.js';
 import { createPaymentLink, paidSession, PLANS, stripeKey } from './stripe.js';
 
 // Estimated unit costs in USD (Zac's SMS rate; the rest are rough and only used for the budget guard).
 export const COST = { sms: 0.008, site: 0.01, msg: 0.03, research: 0.03, triage: 0.005, search: 0.035 }; // site = per-trade template, filled per lead
 export const DEFAULTS = {
-  mode: 'off', dailyBudget: 5, dailyTextCap: 25, maxBotReplies: 2, zwDelayDays: 7, callWarmDays: 2, callCold: true,
-  offer: 'Revenue Generating Solutions: website build $497 one time, then $99/mo for hosting, changes and Google Business Profile setup. No contract. If they want the $497 build fee waived: pay the year up front ($1,188 for 12 months at $99) and the build is free. Optional local SEO is +$199/mo: we publish a new article on their site every day about their local area (their towns, local projects, seasonal tips for their trade), each one linked back to their service and town pages so Google ranks the whole site higher for local searches.',
+  mode: 'off', dailyBudget: 5, dailyTextCap: 25, maxBotReplies: 2, zwDelayDays: 7, callWarmDays: 2, callCold: true, autoCall: true,
+  offer: 'Revenue Generating Solutions: the sample site is already built. No setup fee and nothing down: it goes live this week, the first month is free, then $99/mo for hosting, changes and Google Business Profile setup. Cancel anytime, no contract. Option: pay the year up front ($1,188) instead. Optional local SEO is +$199/mo: a new article on their site every day about their local area (their towns, local projects, seasonal tips for their trade), each linked back to their service and town pages so Google ranks the whole site higher.',
   offerZw: "Zander's Websites: $20/mo, no setup fee, no contract. Zander is 7 and this is his first business; his dad helps him.",
 };
 const HOLIDAYS = new Set(['2026-11-26', '2026-12-25', '2027-01-01']);
@@ -59,6 +59,19 @@ export function angleOf(L) {
   if (site?.copyrightYear && site.copyrightYear < new Date().getFullYear() - 2) return 'Outdated site';
   return 'Has a site';
 }
+// Why the AI has stopped chasing this lead for good ('' = still working it or waiting on Zander's).
+export function finishedWhy(L) {
+  if (L.paid || L.status === 'won') return 'Paid';
+  if (L.status === 'opted_out') return L.dnd ? 'Do Not Disturb' : 'Opted out';
+  if (L.status === 'bad_number') return "Can't text this number";
+  if (L.status === 'duplicate') return 'Already in GHL';
+  if (L.status === 'send_failed') return 'Texts kept failing';
+  if (L.zwDueAt || L.inZwQueue) return '';
+  if (L.status === 'zw_no_response') return "No reply to RGS or Zander's";
+  if (L.status === 'closed') return L.zwSentAt ? "Said no to Zander's too" : 'Said no';
+  if (L.status === 'no_response') return 'Never replied';
+  return '';
+}
 // One line on their current site for the dashboard (what we found before texting them).
 export function siteNote(L) {
   const s = L.facts?.site;
@@ -100,10 +113,10 @@ export const OPENERS = {
 };
 // Offer split test (quoted only when they ask about price; never in the first text). Each RGS lead gets one variant; Metrics shows replies and sales per variant.
 export const VARIANTS = {
-  guarantee: { label: '30-day call guarantee', hook: "If the new site doesn't bring them at least one phone call in the first 30 days, they get the $497 build fee back.", offer: 'Guarantee on this lead: if the new site does not bring them at least one phone call in the first 30 days, the $497 build fee is refunded in full.' },
-  trial: { label: 'First month free', hook: "First month is free and there's no contract. If they don't love it, Zac takes it down.", offer: 'Offer on this lead: the first month of the $99/mo is free (billing starts after 30 days), no contract, and if they do not like it Zac takes it down. The $497 build fee still applies.', plan: 'monthly_trial' },
-  thisweek: { label: 'Build fee waived this week', hook: 'If they go live this week, the $497 build fee is waived and they just pay the monthly, no contract.', offer: 'Offer on this lead: if they sign up within 7 days of the first text, the $497 build fee is waived and they pay only $99/mo, no contract.', plan: 'monthly_nobuild', days: 7 },
-  plain: { label: 'Plain (built, live this week, no contract)', hook: "It's already built, it can be live this week, and there's no contract.", offer: '' },
+  guarantee: { label: 'No-risk framing', hook: "The first month is free, so if it doesn't get them a call they cancel and never pay a cent.", offer: 'Frame it on this lead as zero risk: if the site does not get them a call in the first month, they cancel before billing starts and never pay a cent.', plan: 'starter' },
+  trial: { label: 'First month free', hook: "First month is free and there's no contract.", offer: '', plan: 'starter' },
+  thisweek: { label: 'Live this week', hook: 'It is already built and can be live on their own name this week.', offer: 'Frame it on this lead around speed: it is already built and can be live this week.', plan: 'starter' },
+  plain: { label: 'Plain', hook: "It's already built, nothing down, no contract.", offer: '', plan: 'starter' },
 };
 
 
@@ -362,7 +375,7 @@ Return ONLY JSON: {"action": "offer" or "link", "text": "..."}`,
     try {
       const out = await askClaude(env, {
         system: `IMPORTANT: our first text asked them a simple question, like "do you guys have a website?", "is this the right number for X?", "who handles your website?" or "where do you send people to see your work?". Plain answers to that question such as "yes", "no", "nope", "not yet", "we don't", "me", "who's asking?", "Facebook", "why?" or "yes I do" are NOT rejections: classify them as "interested" (an opening, the sample link goes out next). Only clear rejections ("not interested", "all set", "don't need one", "leave me alone") are "not_interested".
-You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websites (Zander, age 7, with his dad Zac helping)" : 'Zac from Revenue Generating Solutions'}, who offered a local trade business a free sample website. Return ONLY JSON: {"intent": one of "ready_to_buy","interested","price","question","objection","not_interested","wrong_person","asks_if_bot","other","plan": one of "monthly","annual","monthly_seo","reply": string}. Use "ready_to_buy" ONLY when they clearly say they want to go ahead and pay or sign up (e.g. "let's do it", "how do I sign up", "send me the link to pay", "I'll take it"); a yes to seeing the sample, a maybe, or a question is NOT ready_to_buy. "plan": "annual" only if they chose paying the year up front, "monthly_seo" only if they asked for the SEO add-on, otherwise "monthly". For ready_to_buy set "reply" to "". "reply" is a short friendly plain-ASCII text from Zac (max 220 chars, no emoji) or "" if no reply should be sent. Rules: never state any price or timeline unless it appears in OFFER below; if price is asked and OFFER is empty, reply that you'll grab the details and text right back; never promise anything not in OFFER; if they ask whether this is a bot/automated/AI, intent "asks_if_bot" and reply ""; if not_interested/wrong_person, reply "" ; keep the sender's casual local voice; never mention the other brand.\nOFFER: ${(L.brand === 'zw' ? S.settings.offerZw : [S.settings.offer, VARIANTS[L.variant]?.offer].filter(Boolean).join(' ')) || '(none)'}${learnBlock(['replies', 'triage'], true)}`,
+You triage replies to a cold text. SENDER: ${L.brand === 'zw' ? "Zander's Websites (Zander, age 7, with his dad Zac helping)" : 'Zac from Revenue Generating Solutions'}, who offered a local trade business a free sample website. Return ONLY JSON: {"intent": one of "ready_to_buy","interested","price","question","objection","not_interested","wrong_person","asks_if_bot","other","plan": one of "starter","annual","monthly_seo","reply": string}. Use "ready_to_buy" ONLY when they clearly say they want to go ahead and pay or sign up (e.g. "let's do it", "how do I sign up", "send me the link to pay", "I'll take it"); a yes to seeing the sample, a maybe, or a question is NOT ready_to_buy. "plan": "annual" only if they chose paying the year up front, "monthly_seo" only if they asked for the SEO add-on, otherwise "starter". For ready_to_buy set "reply" to "". MAKE THE OFFER: once we have already sent them the sample link, if they react with anything positive or neutral (looks good, nice, how does it work, what now, ok, a question about it), the reply must make the offer in plain words from OFFER (no setup fee, nothing down, first month free, then the monthly, cancel anytime) and end by asking if they want the link to get it live. Do not wait for them to ask the price. "reply" is a short friendly plain-ASCII text from Zac (max 220 chars, no emoji) or "" if no reply should be sent. Rules: never state any price or timeline unless it appears in OFFER below; if price is asked and OFFER is empty, reply that you'll grab the details and text right back; never promise anything not in OFFER; if they ask whether this is a bot/automated/AI, intent "asks_if_bot" and reply ""; if not_interested/wrong_person, reply "" ; keep the sender's casual local voice; never mention the other brand.\nOFFER: ${(L.brand === 'zw' ? S.settings.offerZw : [S.settings.offer, VARIANTS[L.variant]?.offer].filter(Boolean).join(' ')) || '(none)'}${learnBlock(['replies', 'triage'], true)}`,
         user: `Business: ${L.name}\nOur text: ${L.msg}\n${L.linkSent ? 'We already sent them the sample link.' : 'We have not sent the link yet; a separate message with the link is sent automatically, so your reply must NOT include a link.'}\nTheir reply: ${text}`, maxTokens: 1000,
       }, fetchImpl);
       day().spend += COST.triage;
@@ -504,6 +517,7 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
       save(); return { optout: true };
     }
     const c = await classify(L, body); L.lastIntent = c.intent;
+    if (!['not_interested', 'wrong_person'].includes(c.intent)) queueCall(L, `They texted: ${body.slice(0, 120)}`);
     if (!L.linkSent && !L.manual && !SKIP_LINK.has(c.intent)) {
       // They answered the first text. RGS: reply to what they said, say who Zac is and why, and offer the sample
       // (or send it with context once they are clearly open). Never a bare link. Zander's first text already asked "can I send it?".
@@ -517,7 +531,7 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
         ev('reply', `${L.name}: "${body.slice(0, 80)}" -> introduced Zac and offered the sample`, L.id);
         save(); return { intent: c.intent, offered: true };
       }
-      L.linkSent = true; L.status = 'link_sent';
+      L.linkSent = true; L.linkSentAt = now().getTime(); L.status = 'link_sent';
       S.pending.push({ id: L.id, at, text: b.text.replace('{LINK}', L.url) });
       if (L.brand !== 'zw') c.reply = '';
       if (c.intent === 'price' || c.intent === 'objection') {
@@ -529,9 +543,9 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
     }
     // They said yes to buying: the bot sends the right payment link itself (unless Zac already took over).
     if (c.intent === 'ready_to_buy' && L.linkSent) {
-      const brand = brandOf(L); let plan = PLANS[brand][c.plan] ? c.plan : 'monthly';
+      const brand = brandOf(L); let plan = PLANS[brand][c.plan] ? c.plan : (brand === 'rgs' ? 'starter' : 'monthly');
       const V = VARIANTS[L.variant];
-      if (brand === 'rgs' && plan === 'monthly' && V?.plan && (!V.days || now().getTime() - (L.firstSentAt || Date.parse(L.created)) <= V.days * DAY)) plan = V.plan;
+      if (brand === 'rgs' && plan === 'starter' && V?.plan && (!V.days || now().getTime() - (L.firstSentAt || Date.parse(L.created)) <= V.days * DAY)) plan = V.plan;
       L.zwDueAt = null; L.inZwQueue = false; L.needsYou = true; (L.hot ||= {})[brand] = true; L.status = 'hot';
       await move(L, 'RESPOND_YES');
       const already = (L.payLinks || []).find((k) => k.brand === brand && k.plan === plan);
@@ -612,12 +626,64 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
   function clearCall(L, why) { if (L?.toCall) { L.toCall = null; if (why) ev('info', `${L.name} off the call list (${why})`, L.id); } }
   function dismissCall(id) { load(); const L = S.leads[id]; if (!L) throw new Error('lead not found'); clearCall(L, 'dismissed'); save(); return { ok: true }; }
 
+  // Auto-call: a hot reply or a sample-site open rings Zac's cell through GHL, with a whisper saying who and why.
+  // One call at a time (90s apart), 8am-8pm ET, at most one auto-call per lead per hour.
+  function queueCall(L, why) {
+    if (!S.settings.autoCall || L.test || !L.contactId || ['opted_out', 'won', 'bad_number', 'duplicate'].includes(L.status)) return;
+    if (now().getTime() - (L.autoCallAt || 0) < 3600e3 || (S.callQueue ||= []).some((q) => q.id === L.id)) return;
+    S.callQueue.push({ id: L.id, why: ascii(why).slice(0, 170), at: now().getTime() });
+  }
+  async function runCallQueue() {
+    const q = S.callQueue || []; if (!q.length) return;
+    const t = now().getTime(), e = etParts(now());
+    S.callQueue = q.filter((x) => t - x.at < 20 * 60e3); // stale after 20 min
+    if (e.hour < 8 || e.hour >= 20 || t - (S.lastAutoCall || 0) < 90e3 || !S.callQueue.length) return;
+    const x = S.callQueue.shift(); const L = S.leads[x.id]; if (!L) return;
+    const name = shortName(L.name);
+    try {
+      await callLead(L.id, `${name}${L.trade ? ', ' + L.trade : ''}${L.town ? ' in ' + L.town.split(',')[0] : ''}. ${x.why}. Press any key to connect.`);
+      L.autoCallAt = S.lastAutoCall = t;
+      try { await deps.notify?.({ title: `📞 Calling you: ${name}`, body: x.why, id: L.id, url: `/?lead=${encodeURIComponent(L.id)}` }); } catch {}
+    } catch (err) { ev('warn', `auto-call to ${L.name} failed: ${err.message}`, L.id); }
+    save();
+  }
+  // Sample site opened (server filters bots, link previews and Zac's own views).
+  function siteView(slug) {
+    load(); const t = now().getTime();
+    const L = Object.values(S.leads).find((x) => !x.test && ((x.url || '').includes(slug) || (x.zwUrl || '').includes(slug)));
+    if (!L) return;
+    const sentAt = L.linkSentAt || 0;
+    if (sentAt && t - sentAt < 90e3) return; // the texting app fetching a link preview
+    L.views = (L.views || 0) + 1; L.lastViewAt = t;
+    if (t - (L.viewAlertAt || 0) > 3 * 3600e3) {
+      L.viewAlertAt = t; ev('reply', `👀 ${L.name} opened their sample site`, L.id);
+      try { deps.notify?.({ title: `👀 ${shortName(L.name)} is looking at their site`, body: 'Opened the sample just now. Good time to call.', id: L.id, url: `/?lead=${encodeURIComponent(L.id)}` })?.catch?.(() => {}); } catch {}
+      queueCall(L, 'They are looking at their sample site right now');
+    }
+    save();
+  }
+
+  // They got the sample link and went quiet: one text that actually makes the offer (once, RGS only, bot-owned threads).
+  function offerNudge() {
+    const t = now().getTime();
+    for (const L of Object.values(S.leads)) {
+      if (L.test || L.offerNudged || !L.linkSent || L.manual || brandOf(L) !== 'rgs' || DONE_ST.includes(L.status) || L.paid) continue;
+      const sentAt = L.linkSentAt || Math.max(0, ...L.replies.filter((r) => r.bot && /\/s\//.test(r.text)).map((r) => Date.parse(r.at) || 0));
+      if (!sentAt || t - sentAt < 20 * 3600e3 || t - sentAt > 6 * DAY) continue;
+      if (L.replies.some((r) => !r.bot && !r.me && Date.parse(r.at) > sentAt) || S.pending.some((p) => p.id === L.id)) continue;
+      L.offerNudged = true;
+      S.pending.push({ id: L.id, at: t, text: ascii(`Did you get a chance to look at the site? I can have it live this week. No setup fee, first month is free, then $99/mo and you can cancel anytime. Want me to send the link to get it going?`) });
+      ev('info', `Offer follow-up queued for ${L.name} (saw the sample, no reply)`, L.id); save(); return;
+    }
+  }
+
   async function tick() {
     if (busy) return; busy = true;
     try {
       load();
       await pollPayments();
       try { callScan(); } catch (e) { ev('warn', `call list scan failed: ${e.message}`); }
+      try { await runCallQueue(); } catch (e) { ev('warn', `call queue: ${e.message}`); }
       { const X = LRN(), e = etParts(now()); if (env.ANTHROPIC_API_KEY && e.hour >= 2 && e.hour < 6 && X.lastRunDate !== e.date) { try { await learnNow('nightly'); } catch (err) { X.lastRunDate = e.date; ev('warn', `learning run failed: ${err.message}`); } } }
       if (S.settings.mode === 'off' || S.paused) { if (S.pending.some((p) => S.leads[p.id]?.test)) await flushPending(true); return; }
       await flushPending();
@@ -633,6 +699,11 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
         for (const x of Object.values(S.leads)) if (x.status === 'drafted' && !x.test) { x.opener = nextOpener(); x.why = ''; x.writes = 0; }
         S.msgVersion = 4; save();
       }
+      if (S.msgVersion < 5) { // new RGS offer: nothing down, first month free, then $99/mo
+        if (/website build \$497 one time/.test(S.settings.offer || '')) S.settings.offer = DEFAULTS.offer;
+        S.msgVersion = 5; save();
+      }
+      offerNudge();
       // supply: keep a small buffer of drafts, top up leads with a daily search batch
       const drafted = Object.values(S.leads).filter((L) => L.status === 'drafted').length;
       const cap = effCap(), d = day();
@@ -684,6 +755,7 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
     if (typeof s.offerZw === 'string') n.offerZw = s.offerZw.slice(0, 600);
     if (s.callWarmDays != null && Number.isFinite(+s.callWarmDays)) n.callWarmDays = Math.min(14, Math.max(1, Math.round(+s.callWarmDays)));
     if (typeof s.callCold === 'boolean') n.callCold = s.callCold;
+    if (typeof s.autoCall === 'boolean') n.autoCall = s.autoCall;
     save();
   }
   const resume = () => { load().paused = null; ev('info', 'Resumed by Zac'); save(); };
@@ -742,7 +814,7 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
       const lastIn = L.replies.filter((r) => !r.bot && !r.me).slice(-1)[0];
       return { id: L.id, name: L.name, trade: L.trade, town: L.town, phone: L.phone, brand: brandOf(L), pipe: st.pipe, stage: st.stage, status: L.status,
         needsYou: !!L.needsYou, unread: !!L.unread, owner: ownerOf(L), toCall: L.toCall?.why || '', lastAt: lastAt(L), last: lastIn?.text || '', intent: L.lastIntent || '', url: L.url || '', zwUrl: L.zwUrl || '',
-        angle: L.angle || '', why: L.why || '', website: L.website || '', siteNote: siteNote(L), variant: VARIANTS[L.variant]?.label || '', paid: L.paid || null, payLinks: (L.payLinks || []).map(({ url, plan, brand, at }) => ({ url, plan, brand, at })), contactId: L.contactId };
+        angle: L.angle || '', why: L.why || '', website: L.website || '', siteNote: siteNote(L), views: L.views || 0, lastViewAt: L.lastViewAt || 0, finished: finishedWhy(L), variant: VARIANTS[L.variant]?.label || '', paid: L.paid || null, payLinks: (L.payLinks || []).map(({ url, plan, brand, at }) => ({ url, plan, brand, at })), contactId: L.contactId };
     }).sort((a, b) => b.lastAt - a.lastAt);
   }
   async function thread(id) {
@@ -794,11 +866,13 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
   }
   // Call from the business number: tagging the contact fires the GHL "Call Bridge" workflow for that brand,
   // which rings Zac's cell, then dials the lead from the brand's number once he presses a key.
-  async function callLead(id) {
+  async function callLead(id, whisper) {
     load(); const L = S.leads[id]; if (!L?.contactId) throw new Error('lead has no GHL contact yet');
     if (L.status === 'opted_out') throw new Error('they opted out, so no calls');
     const t = now().getTime(); if (t - (L.callAt || 0) < 30e3) throw new Error('already calling, pick up your phone');
     const brand = brandOf(L), tag = brand === 'zw' ? 'zw-call-zander' : 'zw-call-me';
+    const w = ascii(whisper || `${shortName(L.name)}${L.trade ? ', ' + L.trade : ''}${L.town ? ' in ' + L.town.split(',')[0] : ''}. Press any key to connect.`);
+    try { await setWhisper(env, L.contactId, w, fetchImpl); } catch (e) { ev('warn', `could not set call whisper: ${e.message}`, L.id); }
     try { await removeTags(env, L.contactId, [tag], fetchImpl); } catch {}
     await addTags(env, L.contactId, [tag], fetchImpl);
     L.callAt = t; clearCall(L); ev('info', `Calling ${L.name} from the ${brand === 'zw' ? "Zander's" : 'RGS'} number (your cell rings first)`, L.id); save();
@@ -870,5 +944,5 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
       setup: { claude: !!env.ANTHROPIC_API_KEY, ghl: ghlReady(), publicUrl: !!publicUrl(), stages: !!(stage('TEXTED') && stage('RESPOND_YES')), zwPipeline: zwPipe(), webhook: !!env.GHL_WEBHOOK_SECRET, alerts: !!env.ALERT_CONTACT_ID, numberRgs: !!(env.GHL_FROM_NUMBER_RGS || env.GHL_FROM_NUMBER), numberZw: !!env.GHL_FROM_NUMBER_ZW, inWindow: canSendNow(now(), 'MA') },
     };
   }
-  return { tick, handleInbound, setSettings, resume, resolve, view, testSend, endTest, leadsView, thread, reply, setStage, setOwner, payLink, pollPayments, metrics, live, draftAction, feedback, callLead, dismissCall, learnNow, learnView, teach, forget, _state: () => load() };
+  return { tick, handleInbound, setSettings, resume, resolve, view, testSend, endTest, leadsView, thread, reply, setStage, setOwner, payLink, pollPayments, metrics, live, draftAction, feedback, callLead, dismissCall, siteView, learnNow, learnView, teach, forget, _state: () => load() };
 }

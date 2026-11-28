@@ -143,7 +143,7 @@ button,.btn{border-radius:12px;font-weight:600;border-color:var(--line);backgrou
 <button data-v="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg><span>Settings</span></button>
 </nav></header>
 <main id="main">
-<section id="v-inbox"><div class="inbox"><div class="ilist"><input id="iq" class="search" placeholder="Search conversations"><div class="ifilter" id="ibrand"><button data-b="all" class="on">All brands</button><button data-b="rgs">RGS</button><button data-b="zw">Zander's</button></div><div class="ifilter" id="ifilter"><button data-f="all" class="on">All</button><button data-f="you">👤 Yours</button><button data-f="ai">🤖 AI working</button><button data-f="call">📞 To call</button></div><div id="ilist"></div></div>
+<section id="v-inbox"><div class="inbox"><div class="ilist"><input id="iq" class="search" placeholder="Search conversations"><div class="ifilter" id="ibrand"><button data-b="all" class="on">All brands</button><button data-b="rgs">RGS</button><button data-b="zw">Zander's</button></div><div class="ifilter" id="ifilter"><button data-f="all" class="on">All</button><button data-f="you">👤 Yours</button><button data-f="ai">🤖 AI working</button><button data-f="call">📞 To call</button><button data-f="fin">✅ AI finished</button></div><div id="ilist"></div></div>
   <div class="ithread" id="ithread"><div class="mut">Pick a conversation.</div></div></div></section>
 <section id="v-pipe" style="display:none"><div class="seg"><button id="pRgs" class="on">RGS</button><button id="pZw">Zander's</button></div><div class="stagechips" id="stagechips"></div><div id="board" class="plist"></div></section>
 <section id="v-metrics" style="display:none"><div id="metrics"></div></section>
@@ -184,7 +184,7 @@ button,.btn{border-radius:12px;font-weight:600;border-color:var(--line);backgrou
 <h2>Limits and offers</h2>
 <div class="card">
   <div class="row"><label class="small">Daily budget $ <input id="sBudget" type="number" step="0.5" min="0" style="width:90px"></label><label class="small">Max texts/day <input id="sCap" type="number" min="0" style="width:90px"></label></div>
-  <div class="row" style="margin-top:8px"><label class="small">Add to call list after <input id="sCallDays" type="number" min="1" max="14" style="width:60px"> days quiet (after they replied)</label><label class="small"><input id="sCallCold" type="checkbox"> Also list leads who ignored all 3 texts</label></div>
+  <div class="row" style="margin-top:8px"><label class="small">Add to call list after <input id="sCallDays" type="number" min="1" max="14" style="width:60px"> days quiet (after they replied)</label><label class="small"><input id="sCallCold" type="checkbox"> Also list leads who ignored all 3 texts</label><label class="small"><input id="sAutoCall" type="checkbox"> Auto-call me (8am-8pm ET) when a lead replies or opens their site</label></div>
   <label class="f">RGS offer (what the bot may quote)</label><input id="sOffer" style="width:100%">
   <label class="f">Zander's offer (sent a week after an RGS no or no reply)</label><input id="sOfferZw" style="width:100%">
   <div style="margin-top:10px"><button class="p" id="sSave">Save settings</button></div></div>
@@ -231,7 +231,7 @@ async function setMode(m,msg){try{A=await post('/api/autopilot/settings',{mode:m
 $('goLive').onclick=()=>setMode('auto','Autopilot is live.');
 $('pauseBtn').onclick=()=>setMode('draft','Draft only: it keeps writing drafts, nothing sends.');
 $('offBtn').onclick=()=>setMode('off','Autopilot is off.');
-$('sSave').onclick=async()=>{try{A=await post('/api/autopilot/settings',{dailyBudget:+$('sBudget').value,dailyTextCap:+$('sCap').value,offer:$('sOffer').value,offerZw:$('sOfferZw').value,callWarmDays:+$('sCallDays').value,callCold:$('sCallCold').checked});toast('Saved');render()}catch(e){toast(e.message)}};
+$('sSave').onclick=async()=>{try{A=await post('/api/autopilot/settings',{dailyBudget:+$('sBudget').value,dailyTextCap:+$('sCap').value,offer:$('sOffer').value,offerZw:$('sOfferZw').value,callWarmDays:+$('sCallDays').value,callCold:$('sCallCold').checked,autoCall:$('sAutoCall').checked});toast('Saved');render()}catch(e){toast(e.message)}};
 $('skipBtn').onclick=async()=>{try{await post('/api/skip',{ids:[...sel]});sel.clear();loadLeads()}catch(e){toast(e.message)}};
 $('stageBtn').onclick=async()=>{if(!confirm('Add '+sel.size+' lead(s) to GHL "RGS Outreach" without texting them?'))return;try{await post('/api/push',{ids:[...sel],yes:true});sel.clear();toast('Adding to GHL…')}catch(e){toast(e.message)}};
 ['fTier','fView','fText'].forEach(i=>$(i).oninput=()=>{sel.clear();renderLeads()});
@@ -261,6 +261,7 @@ function render(){if(!S||!A)return;
   $('window').textContent=A.setup.inWindow?'Inside the sending window right now.':'Outside the sending window (daily 8am–6:30pm ET, Sundays from 10am; CT from 9am; RI weekdays 9–6, Sat 10–5, no Sundays). Texts wait until it opens.';
   for(const [id,v] of [['sBudget',A.settings.dailyBudget],['sCap',A.settings.dailyTextCap],['sOffer',A.settings.offer],['sOfferZw',A.settings.offerZw],['sCallDays',A.settings.callWarmDays]])if(document.activeElement!==$(id))$(id).value=v??'';
   if(document.activeElement!==$('sCallCold'))$('sCallCold').checked=A.settings.callCold!==false;
+  if(document.activeElement!==$('sAutoCall'))$('sAutoCall').checked=A.settings.autoCall!==false;
   $('keys').replaceChildren(...[['Google search key',S.env.google],['GHL connection',S.env.ghl],['Claude key',A.setup.claude],['RGS number',A.setup.numberRgs],["Zander's number",A.setup.numberZw],['Reply workflow secret',A.setup.webhook],['Alerts to your cell',A.setup.alerts]].map(([n,ok])=>el('div',ok?'ok':'bad',(ok?'✓ ':'✗ ')+n)));
   $('events').replaceChildren(...(A.events||[]).slice(0,40).map(e=>el('div',null,e.at.slice(5,16).replace('T',' ')+' · '+e.text)));
   $('joblog').textContent=S.job.log.join(String.fromCharCode(10));
@@ -304,6 +305,7 @@ function leadRow(x,click){const r=el('div','irow'+(x.pipe==='zw'||x.brand==='zw'
   const m=el('div','m');const top=el('div','top');top.append(el('span','nm',x.name),el('span','tm',ago(x.lastAt)));
   const pv=el('div','pv');
   if(x.paid)pv.append(el('span','tag paid','PAID '+money(x.paid.amount)),document.createTextNode(' '));
+  if(x.finished)pv.append(el('span','tag','✅ '+x.finished),document.createTextNode(' '));
   else if(x.toCall)pv.append(el('span','tag call','📞 TO CALL'),document.createTextNode(' '));
   else if(x.needsYou)pv.append(el('span','tag hot','NEEDS YOU'),document.createTextNode(' '));
   pv.append(document.createTextNode(x.last?'“'+x.last+'”':stageName(x.pipe,x.stage)+(x.brand==='zw'?" · Zander's":'')));
@@ -314,11 +316,11 @@ document.querySelectorAll('#ifilter button').forEach(b=>b.onclick=()=>{ifilt=b.d
 function renderInbox(){const q=$('iq').value.toLowerCase(),box=$('ilist');box.replaceChildren();
   const inB=x=>ibrand==='all'||x.pipe===ibrand;
   document.querySelectorAll('#ifilter button').forEach(b=>b.classList.toggle('on',b.dataset.f===ifilt));
-  const okF=x=>ifilt==='all'||(ifilt==='call'?!!x.toCall:x.owner===ifilt);
+  const okF=x=>ifilt==='all'?!x.finished:ifilt==='fin'?!!x.finished:ifilt==='call'?!!x.toCall:(x.owner===ifilt&&!x.finished);
   const rows=L.leads.filter(x=>inB(x)&&okF(x)&&(!q||(x.name+' '+x.town+' '+x.trade).toLowerCase().includes(q)));
   for(const b of document.querySelectorAll('#ibrand button')){const k=b.dataset.b;if(k!=='all')b.textContent=(k==='rgs'?'RGS':"Zander's")+' '+L.leads.filter(x=>x.pipe===k).length}
-  for(const b of document.querySelectorAll('#ifilter button')){const f=b.dataset.f;if(f!=='all'){const n=L.leads.filter(x=>inB(x)&&(f==='call'?!!x.toCall:x.owner===f)).length;b.textContent=({you:'👤 Yours',ai:'🤖 AI working',call:'📞 To call'})[f]+' '+n;b.classList.toggle('hasn',f==='call'&&n>0)}}
-  if(!rows.length)box.append(el('div','empty',q?'No matches.':ifilt==='call'?'Nobody to call right now.':ifilt==='you'?'Nothing waiting on you.':ifilt==='ai'?'The AI is not working any threads right now.':ibrand==='zw'?"Nobody with Zander's yet. RGS no's land here a week later.":'No conversations yet. Leads show up here once Autopilot texts them.'));
+  for(const b of document.querySelectorAll('#ifilter button')){const f=b.dataset.f;if(f!=='all'){const n=L.leads.filter(x=>inB(x)&&(f==='fin'?!!x.finished:f==='call'?!!x.toCall:(x.owner===f&&!x.finished))).length;b.textContent=({you:'👤 Yours',ai:'🤖 AI working',call:'📞 To call',fin:'✅ AI finished'})[f]+' '+n;b.classList.toggle('hasn',f==='call'&&n>0)}}
+  if(!rows.length)box.append(el('div','empty',q?'No matches.':ifilt==='call'?'Nobody to call right now.':ifilt==='fin'?'Nothing finished yet.':ifilt==='you'?'Nothing waiting on you.':ifilt==='ai'?'The AI is not working any threads right now.':ibrand==='zw'?"Nobody with Zander's yet. RGS no's land here a week later.":'No conversations yet. Leads show up here once Autopilot texts them.'));
   rows.forEach(x=>box.append(leadRow(x,()=>openThread(x.id))))}
 async function openThread(id){cur=id;if(view!=='inbox')show('inbox');const th=$('ithread');th.replaceChildren(el('div','empty','Loading…'));document.body.classList.add('mthread');
   let T;try{const r=await fetch('/api/thread/'+encodeURIComponent(id));T=await r.json();if(!r.ok)throw new Error(T.error)}catch(e){th.replaceChildren(el('div','empty',e.message));return}
@@ -341,7 +343,7 @@ async function openThread(id){cur=id;if(view!=='inbox')show('inbox');const th=$(
   ob.append(el('span',null,otext));
   if(x.owner!=='done'){const ob2=el('button',null,x.owner==='ai'?'Take over':'Hand back to AI');ob2.onclick=async()=>{try{await post('/api/lead/owner',{id:x.id,owner:x.owner==='ai'?'you':'ai'});toast(x.owner==='ai'?'It is yours now':'The AI has it again');await loadLeadsW();openThread(x.id)}catch(e){toast(e.message)}};ob.append(ob2)}
   let cs=null;if(x.toCall){cs=el('div','callbar');cs.append(el('span',null,'📞 To call: '+x.toCall));const cb=el('button','p','Call now');cb.onclick=()=>bar.querySelector('.call')?.click();const dm=el('button',null,'Dismiss');dm.onclick=async()=>{try{await post('/api/lead/nocall',{id:x.id});cs.remove();await loadLeadsW()}catch(e){toast(e.message)}};cs.append(cb,dm)}
-  const si=el('div','siteinfo');si.append(el('b',null,x.website?'Current site: ':'Current site: '));if(x.website){const a=el('a',null,dom(x.website));a.href=/^https?:/i.test(x.website)?x.website:'https://'+x.website;a.target='_blank';a.rel='noopener';si.append(a)}if(x.siteNote)si.append(document.createTextNode((x.website?' · ':'')+x.siteNote));
+  const si=el('div','siteinfo');si.append(el('b',null,x.website?'Current site: ':'Current site: '));if(x.website){const a=el('a',null,dom(x.website));a.href=/^https?:/i.test(x.website)?x.website:'https://'+x.website;a.target='_blank';a.rel='noopener';si.append(a)}if(x.siteNote)si.append(document.createTextNode((x.website?' · ':'')+x.siteNote));if(x.views){const v=el('div',null,'👀 Opened our sample '+x.views+'× · last '+ago(x.lastViewAt)+' ago');v.style.color='var(--ac2)';si.append(v)}
   const ms=el('div','msgs');if(x.why)ms.append(el('div','why','First text used: '+x.why));
   T.messages.forEach(m=>{const who=m.out?(m.by==='you'?'you':'ai'):'';const zwm=m.out&&m.brand==='zw';const b=el('div','msg '+(m.out?'out '+who+(zwm?' zw':''):'in'),m.text);
     const t=el('div','t');if(m.out)t.append(el('b',null,(zwm?"Zander's ":'')+(who==='you'?'You · ':'🤖 AI · ')));t.append(fmtT(m.at)+(who==='ai'?(m.feedback?' · ✓ feedback given':' · tap to give feedback'):''));b.append(t);ms.append(b);

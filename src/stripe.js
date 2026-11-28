@@ -12,11 +12,12 @@ export const PRICES = {
 // mrr = monthly recurring value used for revenue metrics; upfront = what they pay today
 export const PLANS = {
   rgs: {
+    starter: { label: '$0 down, first month free, then $99/mo', prices: ['rgs_care_99'], trialDays: 30, upfront: 0, mrr: 99 },
     monthly: { label: '$497 build + $99/mo', prices: ['rgs_build_497', 'rgs_care_99'], upfront: 596, mrr: 99 },
     annual: { label: '$1,188/yr, build free', prices: ['rgs_annual_1188'], upfront: 1188, mrr: 99 },
     monthly_nobuild: { label: '$99/mo, build fee waived', prices: ['rgs_care_99'], upfront: 99, mrr: 99 },
     monthly_trial: { label: '$497 build, first month free, then $99/mo', prices: ['rgs_build_497', 'rgs_care_99'], trialDays: 30, upfront: 497, mrr: 99 },
-    monthly_seo: { label: '$497 build + $99/mo + daily local SEO articles $199/mo', prices: ['rgs_build_497', 'rgs_care_99', 'rgs_seo_199'], upfront: 795, mrr: 298 },
+    monthly_seo: { label: '$0 down, first month free, then $99/mo + daily local SEO articles $199/mo', prices: ['rgs_care_99', 'rgs_seo_199'], trialDays: 30, upfront: 0, mrr: 298 },
   },
   zw: { monthly: { label: '$20/mo, no setup fee', prices: ['zw_monthly_20'], upfront: 20, mrr: 20 } },
 };

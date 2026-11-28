@@ -79,3 +79,20 @@ export async function getThread(env, contactId, fetchImpl = fetch) {
     .map((x) => ({ at: x.dateAdded, text: x.body, out: String(x.direction).toLowerCase() === 'outbound', status: x.status || '' }))
     .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 }
+
+// "ZW Whisper" contact field: what the call-bridge voice reads to Zac before connecting him.
+let whisperField = null;
+export async function whisperFieldId(env, fetchImpl = fetch) {
+  if (whisperField) return whisperField;
+  const r = await call(env, 'GET', `/locations/${env.GHL_LOCATION_ID}/customFields?model=contact`, undefined, fetchImpl);
+  let f = (r.customFields || []).find((x) => /^zw whisper$/i.test(x.name) || x.fieldKey === 'contact.zw_whisper');
+  if (!f) f = (await call(env, 'POST', `/locations/${env.GHL_LOCATION_ID}/customFields`, { name: 'ZW Whisper', dataType: 'TEXT', model: 'contact' }, fetchImpl)).customField;
+  whisperField = f?.id || null;
+  return whisperField;
+}
+export async function setWhisper(env, contactId, text, fetchImpl = fetch) {
+  const id = await whisperFieldId(env, fetchImpl);
+  if (!id) return false;
+  await call(env, 'PUT', `/contacts/${contactId}`, { customFields: [{ id, field_value: String(text).slice(0, 250) }] }, fetchImpl);
+  return true;
+}

@@ -108,6 +108,11 @@ const server = http.createServer(async (req, res) => {
   const sm = url.pathname.match(/^\/s\/([a-z0-9-]{6,80})(\/.*)?$/);
   if (req.method === 'GET' && sm) {
     const slug = sm[1], sub = sm[2] || '';
+    // Count a real visit to the sample (not link previews, bots, or Zac checking it from the dashboard).
+    const ua = String(req.headers['user-agent'] || '');
+    if ((sub === '/' || sub === '') && ua && !/bot|crawl|spider|preview|facebookexternalhit|whatsapp|slack|twitter|telegram|discord|skype|curl|python|node|axios|headless|bingpreview|linkedin|google-|vercel|go-http/i.test(ua) && !/(^|;\s*)zw=/.test(String(req.headers.cookie || ''))) {
+      try { autopilot.siteView(slug); } catch {}
+    }
     const j = path.join(DATA_DIR, 'sites', `${slug}.json`);
     if (fs.existsSync(j)) { // multi-page template sample
       if (!sub) { res.writeHead(301, { Location: `/s/${slug}/` }); return res.end(); }

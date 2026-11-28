@@ -495,3 +495,28 @@ test('a contact with DND on is skipped as opted out and does not pause autopilot
   assert.equal(L.status, 'opted_out'); assert.equal(L.dnd, true); assert.equal(ap.view().paused, null);
   assert.equal(log.filter((l) => l.url.endsWith('/conversations/messages')).length, 1, 'tried once, never again');
 });
+
+test('auto-call: a hot reply tags the contact for the call bridge with a whisper; site opens alert once; finished leads are labelled', async () => {
+  let clock = new Date('2026-11-24T15:00:00Z').getTime(); // 10am ET
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apac-')); const log = []; const pushes = [];
+  const base = mockFetch(log);
+  const fx = async (u, init = {}) => {
+    if (u.includes('/customFields')) { log.push({ url: u, method: init.method }); const j = { customFields: [{ id: 'cf1', name: 'ZW Whisper' }] }; return { ok: true, status: 200, json: async () => j, text: async () => JSON.stringify(j) }; }
+    if (/\/contacts\/c9$/.test(u) && init.method === 'PUT') { log.push({ url: u, body: JSON.parse(init.body) }); return { ok: true, status: 200, json: async () => ({}), text: async () => '{}' }; }
+    return base(u, init);
+  };
+  const ap = createAutopilot({ env: { ANTHROPIC_API_KEY: 'k', GHL_TOKEN: 't', GHL_LOCATION_ID: 'L' }, dir, fetchImpl: fx, now: () => new Date(clock), deps: { notify: async (m) => pushes.push(m), nextProspect: () => null, readyCount: () => 0, markState() {}, jobRunning: () => false, startFind: () => false } });
+  const S = ap._state(); S.settings.mode = 'auto';
+  S.leads.a = { id: 'a', name: 'Five Star Fencing', trade: 'fence contractor', town: 'Mashpee, MA', contactId: 'c9', phone: '+1', brand: 'rgs', status: 'link_sent', linkSent: true, linkSentAt: clock - 3600e3, url: 'https://x/s/five-star-abc123', step: 1, lastSentAt: clock - 7200e3, replies: [], botReplies: 0 };
+  S.byContact.c9 = 'a';
+  await ap.handleInbound({ contactId: 'c9', text: 'looks nice what does it cost' });
+  await ap.tick();
+  const put = log.find((l) => l.body?.customFields); assert.match(put.body.customFields[0].field_value, /Five Star Fencing.*They texted: looks nice/);
+  assert.ok(log.some((l) => l.url.includes('/contacts/c9/tags') && JSON.stringify(l.body || '').includes('zw-call-me')));
+  assert.ok(pushes.some((p) => /Calling you/.test(p.title)));
+  // site open: alert + no second auto call within the hour
+  ap.siteView('five-star-abc123'); ap.siteView('five-star-abc123');
+  assert.equal(S.leads.a.views, 2); assert.equal(pushes.filter((p) => /looking at their site/.test(p.title)).length, 1);
+  assert.equal((S.callQueue || []).length, 0, 'already auto-called this hour');
+  S.leads.a.status = 'opted_out'; assert.equal(ap.leadsView()[0].finished, 'Opted out');
+});
