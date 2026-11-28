@@ -644,6 +644,7 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
       await callLead(L.id, `${name}${L.trade ? ', ' + L.trade : ''}${L.town ? ' in ' + L.town.split(',')[0] : ''}. ${x.why}. Press any key to connect.`);
       L.autoCallAt = S.lastAutoCall = t;
       try { await deps.notify?.({ title: `📞 Calling you: ${name}`, body: x.why, id: L.id, url: `/?lead=${encodeURIComponent(L.id)}` }); } catch {}
+      await alertZac(`Calling you now: ${name}${L.town ? ' (' + L.town.split(',')[0] + ')' : ''}. ${x.why}`);
     } catch (err) { ev('warn', `auto-call to ${L.name} failed: ${err.message}`, L.id); }
     save();
   }
