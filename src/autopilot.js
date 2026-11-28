@@ -5,7 +5,7 @@ import path from 'node:path';
 import { askClaude } from './claude.js';
 import { research, brief } from './research.js';
 import { generateSite } from './sites.js';
-import { stageProspect, sendSms, moveOpportunity, addTags, removeTags, getThread, setWhisper } from './ghl.js';
+import { stageProspect, sendSms, moveOpportunity, addTags, removeTags, getThread, setWhisper, getContact, isCarrierDnd } from './ghl.js';
 import { createPaymentLink, paidSession, PLANS, stripeKey } from './stripe.js';
 
 // Estimated unit costs in USD (Zac's SMS rate; the rest are rough and only used for the budget guard).
@@ -64,6 +64,7 @@ export function finishedWhy(L) {
   if (L.paid || L.status === 'won') return 'Paid';
   if (L.status === 'opted_out') return L.dnd ? 'Do Not Disturb' : 'Opted out';
   if (L.status === 'bad_number') return "Can't text this number";
+  if (L.status === 'landline') return 'Landline: call only';
   if (L.status === 'duplicate') return 'Already in GHL';
   if (L.status === 'send_failed') return 'Texts kept failing';
   if (L.zwDueAt || L.inZwQueue) return '';
@@ -356,8 +357,12 @@ Return ONLY JSON: {"action": "offer" or "link", "text": "..."}`,
     } catch (e) {
       // Problems with this one contact (DND on, landline, bad number) take the lead out and don't count toward the pause.
       if (/DND|do not disturb/i.test(e.message)) {
-        L.status = 'opted_out'; L.dnd = true; L.zwDueAt = null; L.inZwQueue = false; if (!S.optOut.includes(L.phone)) S.optOut.push(L.phone);
-        ev('info', `${L.name} has Do Not Disturb on in GHL; skipped and never texted`, L.id); await move(L, 'OPTED_OUT');
+        let carrier = false; try { carrier = isCarrierDnd(await getContact(env, L.contactId, fetchImpl)); } catch {}
+        if (carrier) markLandline(L);
+        else {
+          L.status = 'opted_out'; L.dnd = true; L.zwDueAt = null; L.inZwQueue = false; if (!S.optOut.includes(L.phone)) S.optOut.push(L.phone);
+          ev('info', `${L.name} has Do Not Disturb on in GHL; skipped and never texted`, L.id); await move(L, 'OPTED_OUT');
+        }
       } else if (/landline|invalid|not a valid|cannot be sent|not sms capable/i.test(e.message)) {
         L.status = 'bad_number'; ev('info', `${L.name}: number can't get texts; skipped`, L.id); await move(L, 'BAD_NUMBER');
       } else {
@@ -601,7 +606,7 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
 
   // "To call" list: warm leads that went quiet after replying, and cold leads that ignored all 3 RGS texts
   // (flagged 2 days after the last follow-up, before they move to Zander's). Cleared by a reply, a call, a stage change or Dismiss.
-  const DONE_ST = ['opted_out', 'won', 'closed', 'bad_number', 'duplicate'];
+  const DONE_ST = ['opted_out', 'won', 'closed', 'bad_number', 'duplicate', 'landline'];
   function callScan() {
     const t = now().getTime(); let n = 0;
     for (const L of Object.values(S.leads)) {
@@ -664,6 +669,20 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
     save();
   }
 
+  // The carrier rejected our text (landline / can't receive SMS): no more texts, but it's a real business phone, so call it.
+  function markLandline(L) {
+    L.status = 'landline'; L.dnd = false; L.landline = true; L.zwDueAt = null; L.inZwQueue = false;
+    S.optOut = S.optOut.filter((p) => p !== L.phone);
+    L.toCall = { at: now().toISOString(), why: "Landline: texts can't reach them, call instead" };
+    ev('info', `${L.name} is a landline (texts can't reach it); added to your call list`, L.id);
+  }
+  async function fixCarrierDnd() { // one-time: leads wrongly marked opted out when it was really a landline
+    for (const L of Object.values(S.leads)) {
+      if (!L.dnd || L.landline || !L.contactId) continue;
+      try { if (isCarrierDnd(await getContact(env, L.contactId, fetchImpl))) markLandline(L); else L.dndChecked = true; } catch { continue; }
+    }
+  }
+
   // They got the sample link and went quiet: one text that actually makes the offer (once, RGS only, bot-owned threads).
   function offerNudge() {
     const t = now().getTime();
@@ -704,6 +723,7 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
         if (/website build \$497 one time/.test(S.settings.offer || '')) S.settings.offer = DEFAULTS.offer;
         S.msgVersion = 5; save();
       }
+      if (S.msgVersion < 6) { await fixCarrierDnd(); S.msgVersion = 6; save(); }
       offerNudge();
       // supply: keep a small buffer of drafts, top up leads with a daily search batch
       const drafted = Object.values(S.leads).filter((L) => L.status === 'drafted').length;
@@ -772,7 +792,7 @@ Return ONLY JSON: {"summary": "2-3 plain sentences on what is working and what i
     return m[L.status] ? { pipe: brandOf(L), stage: m[L.status] } : null;
   }
   // Who is answering this lead right now: 'ai' (bot still replies), 'you' (you took over or the bot handed off), 'done' (closed/opted out/won)
-  const ownerOf = (L) => (['opted_out', 'won', 'closed', 'bad_number', 'duplicate'].includes(L.status) ? 'done' : L.manual || L.botReplies >= S.settings.maxBotReplies ? 'you' : 'ai');
+  const ownerOf = (L) => (['opted_out', 'won', 'closed', 'bad_number', 'duplicate', 'landline'].includes(L.status) ? 'done' : L.manual || L.botReplies >= S.settings.maxBotReplies ? 'you' : 'ai');
   // The open thread polls this: marks Zac as looking (bot replies wait for him) and returns what is set to send.
   const pid = () => Math.random().toString(36).slice(2, 10);
   function live(id) {

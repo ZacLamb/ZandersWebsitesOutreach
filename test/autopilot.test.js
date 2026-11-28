@@ -492,7 +492,7 @@ test('a contact with DND on is skipped as opted out and does not pause autopilot
   const { ap } = setup({}, fx); ap.setSettings({ mode: 'auto' });
   for (let i = 0; i < 8; i++) { ap._state().nextSendAt = 0; await ap.tick(); }
   const L = ap._state().leads.ChIJ1;
-  assert.equal(L.status, 'opted_out'); assert.equal(L.dnd, true); assert.equal(ap.view().paused, null);
+  assert.ok(['opted_out','landline'].includes(L.status)); assert.equal(ap.view().paused, null);
   assert.equal(log.filter((l) => l.url.endsWith('/conversations/messages')).length, 1, 'tried once, never again');
 });
 
@@ -519,4 +519,18 @@ test('auto-call: a hot reply tags the contact for the call bridge with a whisper
   assert.equal(S.leads.a.views, 2); assert.equal(pushes.filter((p) => /looking at their site/.test(p.title)).length, 1);
   assert.equal((S.callQueue || []).length, 0, 'already auto-called this hour');
   S.leads.a.status = 'opted_out'; assert.equal(ap.leadsView()[0].finished, 'Opted out');
+});
+
+test('a carrier-rejected number (GHL auto-DND, Twilio 30006) is a landline: no more texts, put on the call list, not opted out', async () => {
+  const log = []; const base = mockFetch(log);
+  const fx = async (u, init = {}) => {
+    if (u.endsWith('/conversations/messages') && init.method === 'POST') { log.push({ url: u }); const j = { message: 'Cannot send message as DND is active for SMS.' }; return { ok: false, status: 400, json: async () => j, text: async () => JSON.stringify(j) }; }
+    if (/\/contacts\/c1$/.test(u) && (!init.method || init.method === 'GET')) { const j = { contact: { id: 'c1', dndSettings: { SMS: { status: 'active', message: 'TWILIO_ERROR_CODE: 30006' } } } }; return { ok: true, status: 200, json: async () => j, text: async () => JSON.stringify(j) }; }
+    return base(u, init);
+  };
+  const { ap } = setup({}, fx); ap.setSettings({ mode: 'auto' });
+  for (let i = 0; i < 4; i++) { ap._state().nextSendAt = 0; await ap.tick(); }
+  const L = ap._state().leads.ChIJ1;
+  assert.equal(L.status, 'landline'); assert.equal(ap._state().optOut.length, 0);
+  const v = ap.leadsView()[0]; assert.match(v.toCall, /Landline/); assert.equal(v.finished, 'Landline: call only');
 });

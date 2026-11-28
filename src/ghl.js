@@ -96,3 +96,6 @@ export async function setWhisper(env, contactId, text, fetchImpl = fetch) {
   await call(env, 'PUT', `/contacts/${contactId}`, { customFields: [{ id, field_value: String(text).slice(0, 250) }] }, fetchImpl);
   return true;
 }
+export const getContact = (env, contactId, fetchImpl = fetch) => call(env, 'GET', `/contacts/${contactId}`, undefined, fetchImpl).then((r) => r.contact || r);
+// GHL turns SMS DND on by itself when the carrier rejects a text (30003-30006: landline / unreachable). That is not an opt-out.
+export const isCarrierDnd = (c) => /TWILIO_ERROR_CODE:\s*300(03|04|05|06)|landline|unreachable/i.test(String(c?.dndSettings?.SMS?.message || ''));
